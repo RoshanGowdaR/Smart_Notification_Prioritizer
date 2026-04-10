@@ -65,6 +65,7 @@ class NotificationResponse(BaseSchema):
 class PriorityRequest(BaseSchema):
 	user_id: UUID
 	priority_apps: dict[str, int] = Field(default_factory=dict)
+	keyword_rules: dict[str, dict[str, int]] = Field(default_factory=dict)
 	ranking_weights: dict[str, float] = Field(default_factory=dict)
 
 
@@ -72,6 +73,7 @@ class PriorityResponse(BaseSchema):
 	priority_id: UUID
 	user_id: UUID
 	priority_apps: dict[str, int]
+	keyword_rules: dict[str, dict[str, int]] = Field(default_factory=dict)
 	ranking_weights: dict[str, float]
 	updated_at: datetime
 
