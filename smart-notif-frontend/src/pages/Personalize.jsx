@@ -5,29 +5,12 @@ import AppToggle from "../components/AppToggle";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
-const appList = [
-  "Gmail",
-  "WhatsApp",
-  "Calendar",
-  "Slack",
-  "Jira",
-  "Instagram",
-  "Telegram",
-  "Flipkart",
-  "Swiggy",
-  "Myntra",
-  "X",
-  "System",
-];
-
-const defaultPriorities = appList.reduce((acc, app) => {
-  acc[app] = 3;
-  return acc;
-}, {});
+const appList = ["Gmail", "Google Calendar"];
 
 export default function Personalize() {
   const { user_id: userId } = useUser();
-  const [priorities, setPriorities] = useState(defaultPriorities);
+  const [selectedApps, setSelectedApps] = useState({ Gmail: true, "Google Calendar": true });
+  const [keywordRules, setKeywordRules] = useState({ Gmail: {}, "Google Calendar": {} });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -37,23 +20,60 @@ export default function Personalize() {
     let isMounted = true;
 
     const loadPriorities = async () => {
+      if (!userId) {
+        return;
+      }
+
       setIsLoading(true);
       try {
         const response = await client.get(`/priority/${userId}`);
         const loaded = response?.data?.priority_apps || {};
+        const loadedKeywordRules = response?.data?.keyword_rules || {};
 
-        const normalized = appList.reduce((acc, app) => {
+        const normalizedSelection = appList.reduce((acc, app) => {
           const value = Number(loaded[app]);
-          acc[app] = Number.isFinite(value) && value >= 1 && value <= 5 ? value : 3;
+          acc[app] = Number.isFinite(value) ? value > 0 : true;
+          return acc;
+        }, {});
+
+        const normalizedKeywordRules = appList.reduce((acc, app) => {
+          const source = loadedKeywordRules[app];
+
+          if (Array.isArray(source)) {
+            acc[app] = source.reduce((map, keyword) => {
+              const cleaned = String(keyword).trim().toLowerCase();
+              if (cleaned) {
+                map[cleaned] = 3;
+              }
+              return map;
+            }, {});
+            return acc;
+          }
+
+          if (source && typeof source === "object") {
+            acc[app] = Object.entries(source).reduce((map, [keyword, level]) => {
+              const cleaned = String(keyword).trim().toLowerCase();
+              const normalizedLevel = Number(level);
+              if (cleaned) {
+                map[cleaned] = Number.isFinite(normalizedLevel) ? Math.min(5, Math.max(1, normalizedLevel)) : 3;
+              }
+              return map;
+            }, {});
+            return acc;
+          }
+
+          acc[app] = {};
           return acc;
         }, {});
 
         if (isMounted) {
-          setPriorities(normalized);
+          setSelectedApps(normalizedSelection);
+          setKeywordRules(normalizedKeywordRules);
         }
       } catch (_error) {
         if (isMounted) {
-          setPriorities(defaultPriorities);
+          setSelectedApps({ Gmail: true, "Google Calendar": true });
+          setKeywordRules({ Gmail: {}, "Google Calendar": {} });
         }
       } finally {
         if (isMounted) {
@@ -62,17 +82,19 @@ export default function Personalize() {
       }
     };
 
-    if (userId) {
-      loadPriorities();
-    }
+    loadPriorities();
 
     return () => {
       isMounted = false;
     };
   }, [userId]);
 
-  const handlePriorityChange = (appName, newValue) => {
-    setPriorities((prev) => ({ ...prev, [appName]: newValue }));
+  const handleToggleSelect = (appName, selected) => {
+    setSelectedApps((prev) => ({ ...prev, [appName]: selected }));
+  };
+
+  const handleKeywordsChange = (appName, nextKeywordLevels) => {
+    setKeywordRules((prev) => ({ ...prev, [appName]: nextKeywordLevels }));
   };
 
   const handleSavePreferences = async () => {
@@ -82,7 +104,11 @@ export default function Personalize() {
     try {
       await client.post("/priority/set", {
         user_id: userId,
-        priority_apps: priorities,
+        priority_apps: appList.reduce((acc, app) => {
+          acc[app] = selectedApps[app] ? 1 : 0;
+          return acc;
+        }, {}),
+        keyword_rules: keywordRules,
         ranking_weights: {
           urgency: 0.4,
           recency: 0.3,
@@ -93,47 +119,51 @@ export default function Personalize() {
       setShowSavedToast(true);
       window.setTimeout(() => {
         setShowSavedToast(false);
-      }, 3000);
+      }, 2500);
     } catch (_error) {
-      setSaveError("Failed to save preferences. Please try again.");
+      const backendMessage =
+        _error?.response?.data?.detail ||
+        _error?.message ||
+        "Failed to save preferences. Please try again.";
+      setSaveError(String(backendMessage));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const averagePriority = useMemo(() => {
-    const values = Object.values(priorities);
-    const sum = values.reduce((total, value) => total + Number(value || 0), 0);
-    return (sum / values.length).toFixed(2);
-  }, [priorities]);
+  const selectedCount = useMemo(() => Object.values(selectedApps).filter(Boolean).length, [selectedApps]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="shell">
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Personalize Priorities</h1>
-          <p className="mt-2 text-sm text-gray-300">
-            Tune app-level priority scores. Current average priority: <span className="text-cyan-300">{averagePriority}</span>
-          </p>
+      <main className="section-wrap max-w-6xl py-8">
+        <header className="panel mb-6 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="kicker">Personalization Engine</p>
+              <h1 className="mt-3 text-2xl font-black uppercase tracking-[0.04em] text-[#102447]">Personalize Priorities</h1>
+              <p className="mt-2 text-sm text-[#4f648c]">Control how ranking reacts to your apps and context keywords.</p>
+            </div>
+            <div className="metric-pill">Selected apps: {selectedCount}</div>
+          </div>
         </header>
 
         {showSavedToast && (
-          <div className="mb-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300">
-            Preferences saved!
+          <div className="mb-4 rounded-xl border border-[#b8dec9] bg-[#eefaf2] px-4 py-2 text-sm font-medium text-[#226743]">
+            Preferences saved successfully.
           </div>
         )}
 
         {saveError && (
-          <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200">
+          <div className="mb-4 rounded-xl border border-[#f3c1bf] bg-[#fff3f3] px-4 py-2 text-sm text-[#9d2e2a]">
             {saveError}
           </div>
         )}
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-700 border-t-cyan-400" />
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#b9cbe8] border-t-[#0B3D91]" />
           </div>
         ) : (
           <section className="space-y-3">
@@ -141,8 +171,10 @@ export default function Personalize() {
               <AppToggle
                 key={appName}
                 appName={appName}
-                priority={priorities[appName]}
-                onChange={handlePriorityChange}
+                selected={Boolean(selectedApps[appName])}
+                keywordLevels={keywordRules[appName] || {}}
+                onToggleSelect={handleToggleSelect}
+                onKeywordsChange={handleKeywordsChange}
               />
             ))}
           </section>
@@ -153,7 +185,7 @@ export default function Personalize() {
             type="button"
             onClick={handleSavePreferences}
             disabled={isSaving || isLoading}
-            className="rounded-lg bg-cyan-500 px-5 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
+            className="btn-ink h-11 px-6 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isSaving ? "Saving..." : "Save Preferences"}
           </button>

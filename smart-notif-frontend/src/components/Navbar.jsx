@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 
-import client from "../api/client";
+import { supabase } from "../lib/supabase";
 import { useUser } from "../context/UserContext";
+
+const GOOGLE_PROVIDER_TOKEN_KEY = "notifyai_google_provider_token";
 
 const navItems = [
   { label: "Dashboard", to: "/dashboard" },
@@ -20,11 +22,12 @@ export default function Navbar() {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await client.post("/auth/logout", {});
+      await supabase.auth.signOut({ scope: "global" });
     } catch (_error) {
-      // Allow local logout even if backend logout fails.
+      // Allow local logout even if upstream sign-out fails.
     } finally {
       setUser({ user_id: "", username: "", email: "" });
+      localStorage.removeItem(GOOGLE_PROVIDER_TOKEN_KEY);
       setMenuOpen(false);
       setIsLoggingOut(false);
       navigate("/");
@@ -33,18 +36,26 @@ export default function Navbar() {
 
   const navLinkClassName = ({ isActive }) =>
     [
-      "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+      "inline-flex h-16 items-center border-b-2 px-1 text-sm font-semibold uppercase tracking-[0.12em] transition-colors",
       isActive
-        ? "bg-cyan-500/20 text-cyan-300"
-        : "text-gray-300 hover:bg-gray-700 hover:text-white",
+        ? "border-[#4f46e5] text-[#3f37c9]"
+        : "border-transparent text-[#5b6f95] hover:text-[#3f37c9]",
     ].join(" ");
 
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900 text-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        <div className="text-xl font-bold tracking-tight text-cyan-300">NotifyAI</div>
+    <header className="sticky top-0 z-50 h-16 glass text-[#102345]">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#4f46e5] to-[#06b6d4] text-sm font-black text-white shadow-lg shadow-indigo-500/20">
+            N
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#6a7ca3]">NotifyAI</p>
+            <p className="text-sm font-bold uppercase tracking-[0.09em] text-[#14203b]">Priority Engine</p>
+          </div>
+        </div>
 
-        <nav className="hidden items-center gap-2 md:flex">
+        <nav className="hidden h-full items-center gap-6 md:flex">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} className={navLinkClassName}>
               {item.label}
@@ -57,7 +68,7 @@ export default function Navbar() {
             type="button"
             onClick={handleLogout}
             disabled={isLoggingOut}
-            className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70"
+            className="btn-ghost disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isLoggingOut ? "Logging out..." : "Logout"}
           </button>
@@ -65,24 +76,27 @@ export default function Navbar() {
 
         <button
           type="button"
-          className="rounded-md p-2 text-gray-200 hover:bg-gray-800 md:hidden"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#c6d4ee] bg-white/70 text-xl font-semibold text-[#2f4570] md:hidden"
           aria-label="Toggle navigation"
           onClick={() => setMenuOpen((open) => !open)}
         >
-          <span className="block h-0.5 w-5 bg-current" />
-          <span className="mt-1.5 block h-0.5 w-5 bg-current" />
-          <span className="mt-1.5 block h-0.5 w-5 bg-current" />
+          ☰
         </button>
       </div>
 
       {menuOpen && (
-        <div className="border-t border-gray-800 bg-gray-900 px-4 pb-4 md:hidden">
-          <nav className="mt-3 grid gap-2">
+        <div className="border-t border-[#d7e2f5] bg-white/90 px-4 pb-4 md:hidden">
+          <nav className="mt-2 grid gap-1">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                className={navLinkClassName}
+                className={({ isActive }) =>
+                  [
+                    "border-b border-[#e6edf8] py-3 text-sm font-semibold uppercase tracking-[0.12em] transition-colors",
+                    isActive ? "text-[#4f46e5]" : "text-[#5B6F95] hover:text-[#4f46e5]",
+                  ].join(" ")
+                }
                 onClick={() => setMenuOpen(false)}
               >
                 {item.label}
@@ -92,7 +106,7 @@ export default function Navbar() {
               type="button"
               onClick={handleLogout}
               disabled={isLoggingOut}
-              className="mt-2 rounded-md bg-red-600 px-3 py-2 text-left text-sm font-medium transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70"
+              className="btn-ghost mt-3 w-full text-left disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isLoggingOut ? "Logging out..." : "Logout"}
             </button>
