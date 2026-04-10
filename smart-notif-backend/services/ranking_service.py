@@ -1,8 +1,19 @@
 from __future__ import annotations
 
+# Training data notes:
+# - The training dataset is synthetic mock notifications generated at runtime
+#   across work, social, promo, and system categories with timestamps from the
+#   last 24 hours.
+# - The epsilon-greedy bandit learns per-app arm weights by simulating actions
+#   (clicked vs dismissed), then updating Q-values incrementally per arm.
+# - bandit_weights.json stores learned arm weights so API ranking can reuse
+#   previous training outcomes on startup.
+
 import os
 import random
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import UUID
 
 from database.supabase_client import get_supabase_client
@@ -11,6 +22,15 @@ from models.schemas import NotificationCategory, ReportAction
 DEFAULT_EPSILON = float(os.getenv("BANDIT_EPSILON", "0.1"))
 DEFAULT_SCORING_WEIGHTS = {"app_weight": 0.4, "recency": 0.3, "urgency": 0.3}
 _BANDIT_COUNTS_KEY = "_bandit_counts"
+_WEIGHTS_FILE = Path(__file__).with_name("bandit_weights.json")
+_MOCK_DATA_FILE = Path(__file__).with_name("mock_data.json")
+
+_CATEGORY_APP_POOL: dict[NotificationCategory, list[str]] = {
+	NotificationCategory.work: ["Gmail", "Calendar", "Slack", "Jira"],
+	NotificationCategory.social: ["WhatsApp", "Instagram", "X", "Telegram"],
+	NotificationCategory.promo: ["Amazon", "Flipkart", "Myntra", "Swiggy"],
+	NotificationCategory.system: ["Security", "System", "Drive", "Updates"],
+}
 
 _CATEGORY_URGENCY: dict[NotificationCategory, float] = {
 	NotificationCategory.work: 1.0,
@@ -61,6 +81,28 @@ def compute_notification_score(
 	)
 
 
+def load_bandit_weights() -> dict[str, float]:
+	if not _WEIGHTS_FILE.exists():
+		return {}
+
+	try:
+		data = json.loads(_WEIGHTS_FILE.read_text(encoding="utf-8"))
+		return {str(k): float(v) for k, v in data.items()}
+	except Exception:
+		return {}
+
+
+def save_bandit_weights(weights: dict[str, float]) -> None:
+	_WEIGHTS_FILE.write_text(
+		json.dumps({k: round(float(v), 6) for k, v in weights.items()}, indent=2),
+		encoding="utf-8",
+	)
+
+
+def save_mock_notifications(notifications: list[dict]) -> None:
+	_MOCK_DATA_FILE.write_text(json.dumps(notifications, indent=2), encoding="utf-8")
+
+
 def select_app_arm(
 	app_names: list[str],
 	app_weights: dict[str, float],
@@ -80,7 +122,7 @@ def rank_notifications(
 	app_weights: dict[str, float] | None = None,
 	ranking_weights: dict[str, float] | None = None,
 ) -> list[dict]:
-	app_weights = app_weights or {}
+	app_weights = app_weights or load_bandit_weights()
 
 	ranked: list[dict] = []
 	for notif in notifications:
@@ -131,7 +173,8 @@ def update_bandit_after_report(
 	row = _get_latest_priority_row(user_id)
 
 	if row is None:
-		priority_apps: dict[str, float] = {app_name: float(reward)}
+		priority_apps: dict[str, float] = load_bandit_weights()
+		priority_apps[app_name] = float(reward)
 		ranking_weights: dict = {
 			"app_weight": 0.4,
 			"recency": 0.3,
@@ -147,6 +190,7 @@ def update_bandit_after_report(
 				"updated_at": now_iso,
 			}
 		).execute()
+		save_bandit_weights(priority_apps)
 		return priority_apps
 
 	priority_id = row["priority_id"]
@@ -173,4 +217,114 @@ def update_bandit_after_report(
 		}
 	).eq("priority_id", priority_id).execute()
 
-	return {k: float(v) for k, v in priority_apps.items()}
+	final_weights = {k: float(v) for k, v in priority_apps.items()}
+	save_bandit_weights(final_weights)
+	return final_weights
+
+
+def generate_mock_notifications(count: int = 50) -> list[dict]:
+	now = datetime.now(timezone.utc)
+	notifications: list[dict] = []
+
+	if count < 10:
+		count = 10
+
+	work_count = int(count * 0.4)
+	promo_count = int(count * 0.3)
+	social_count = int(count * 0.2)
+	system_count = count - (work_count + promo_count + social_count)
+
+	def append_notification(index: int, category: NotificationCategory, app_name: str) -> None:
+		hours_ago = random.uniform(0, 24)
+		received_at = (now - timedelta(hours=hours_ago)).isoformat()
+		notifications.append(
+			{
+				"notif_id": f"mock-{index + 1}",
+				"user_id": "simulation-user",
+				"app_name": app_name,
+				"content": f"Synthetic {category.value} alert from {app_name}",
+				"category": category.value,
+				"is_seen": False,
+				"received_at": received_at,
+			}
+		)
+
+	index = 0
+	for _ in range(work_count):
+		# Bias work traffic toward Gmail to train preference learning.
+		app_name = "Gmail" if random.random() < 0.7 else random.choice(_CATEGORY_APP_POOL[NotificationCategory.work])
+		append_notification(index, NotificationCategory.work, app_name)
+		index += 1
+
+	for _ in range(promo_count):
+		append_notification(index, NotificationCategory.promo, random.choice(_CATEGORY_APP_POOL[NotificationCategory.promo]))
+		index += 1
+
+	for _ in range(social_count):
+		append_notification(index, NotificationCategory.social, random.choice(_CATEGORY_APP_POOL[NotificationCategory.social]))
+		index += 1
+
+	for _ in range(system_count):
+		append_notification(index, NotificationCategory.system, random.choice(_CATEGORY_APP_POOL[NotificationCategory.system]))
+		index += 1
+
+	random.shuffle(notifications)
+
+	return notifications
+
+
+def _simulate_user_action(notification: dict) -> ReportAction:
+	category = NotificationCategory(notification["category"])
+	app_name = notification["app_name"]
+	rng = random.random()
+
+	if category == NotificationCategory.work and app_name == "Gmail":
+		return ReportAction.clicked if rng < 0.8 else ReportAction.dismissed
+
+	if category == NotificationCategory.promo:
+		return ReportAction.dismissed if rng < 0.9 else ReportAction.clicked
+
+	if category == NotificationCategory.system:
+		return ReportAction.clicked if rng < 0.5 else ReportAction.dismissed
+
+	return ReportAction.clicked if rng < 0.3 else ReportAction.dismissed
+
+
+def _incremental_update(weight: float, count: int, reward: int) -> float:
+	return weight + (float(reward) - weight) / float(count)
+
+
+def run_bandit_training_simulation(count: int = 50, epsilon: float = DEFAULT_EPSILON) -> dict[str, float]:
+	notifications = generate_mock_notifications(count=count)
+	save_mock_notifications(notifications)
+	weights: dict[str, float] = {}
+	counts: dict[str, int] = {}
+
+	apps_in_dataset = sorted({n["app_name"] for n in notifications})
+	for app in apps_in_dataset:
+		weights.setdefault(app, 0.5)
+		# Prior count stabilizes sparse arms so one click cannot dominate leaderboard.
+		counts.setdefault(app, 2)
+
+	pools: dict[str, list[dict]] = {app: [] for app in apps_in_dataset}
+	for notif in notifications:
+		pools[notif["app_name"]].append(notif)
+
+	for _ in range(len(notifications)):
+		available_apps = [app for app, items in pools.items() if items]
+		if not available_apps:
+			break
+
+		chosen_app = select_app_arm(available_apps, weights, epsilon=epsilon)
+		notification = pools[chosen_app].pop()
+		action = _simulate_user_action(notification)
+		reward = _reward_from_action(action)
+
+		counts[chosen_app] += 1
+		weights[chosen_app] = round(
+			_incremental_update(weights[chosen_app], counts[chosen_app], reward),
+			6,
+		)
+
+	save_bandit_weights(weights)
+	return dict(sorted(weights.items(), key=lambda item: item[1], reverse=True))
