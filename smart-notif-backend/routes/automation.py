@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Form, HTTPException, Response, status
 from pydantic import BaseModel
 
 from database.supabase_client import get_supabase_client
@@ -13,6 +13,14 @@ from services.forward_service import forward_notification
 from services.ranking_service import compute_notification_score
 
 router = APIRouter(tags=["automation"])
+
+
+def _normalize_phone(value: str) -> str:
+	raw = value.replace("whatsapp:", "").strip()
+	digits = "".join(ch for ch in raw if ch.isdigit())
+	if not digits:
+		return raw
+	return f"+{digits}"
 
 
 class AutomationTriggerResponse(BaseModel):
@@ -135,3 +143,52 @@ def get_automation_history(user_id: UUID) -> list[AutomationResponse]:
 	)
 	rows = result.data or []
 	return [AutomationResponse.model_validate(row) for row in rows]
+
+
+@router.post(
+	"/whatsapp-reply",
+	status_code=status.HTTP_200_OK,
+)
+def whatsapp_reply_webhook(
+	From: str = Form(default=""),
+	Body: str = Form(default=""),
+	To: str = Form(default=""),
+) -> Response:
+	_ = Body
+	_ = To
+
+	supabase = get_supabase_client()
+	from_phone = _normalize_phone(From)
+	if not from_phone:
+		return Response(
+			content="<Response><Message>Got it! We'll stop alerts.</Message></Response>",
+			media_type="application/xml",
+		)
+
+	user_lookup = supabase.table("users").select("user_id, ph_num").execute()
+	users = user_lookup.data or []
+	matched_user_id: str | None = None
+	for row in users:
+		stored_phone = _normalize_phone(str(row.get("ph_num") or ""))
+		if stored_phone and (stored_phone == from_phone or stored_phone.endswith(from_phone[-10:])):
+			matched_user_id = str(row.get("user_id"))
+			break
+
+	if matched_user_id:
+		auto_result = (
+			supabase.table("automation")
+			.select("auto_id")
+			.eq("user_id", matched_user_id)
+			.eq("channel", "whatsapp")
+			.order("triggered_at", desc=True)
+			.limit(1)
+			.execute()
+		)
+		auto_row = (auto_result.data or [None])[0]
+		if auto_row:
+			supabase.table("automation").update({"reply_received": True}).eq("auto_id", auto_row["auto_id"]).execute()
+
+	return Response(
+		content="<Response><Message>Got it! We'll stop alerts.</Message></Response>",
+		media_type="application/xml",
+	)

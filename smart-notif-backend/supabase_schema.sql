@@ -37,8 +37,12 @@ create table if not exists public.automation (
   priority_id uuid not null references public.priority(priority_id) on delete cascade,
   channel text not null check (channel in ('whatsapp', 'sms')),
   reply_template text not null,
+  reply_received boolean not null default false,
   triggered_at timestamptz not null default now()
 );
+
+alter table if exists public.automation
+add column if not exists reply_received boolean not null default false;
 
 create table if not exists public.report (
   report_id uuid primary key default gen_random_uuid(),
