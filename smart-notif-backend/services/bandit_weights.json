@@ -1,0 +1,17 @@
+{
+  "Amazon": 0.4,
+  "Calendar": 0.333333,
+  "Drive": 0.5,
+  "Flipkart": 0.333333,
+  "Gmail": 0.944444,
+  "Instagram": 0.2,
+  "Jira": 0.666667,
+  "Myntra": 0.333333,
+  "Security": 0.333333,
+  "Slack": 0.5,
+  "Swiggy": 0.333333,
+  "Telegram": 0.25,
+  "Updates": 0.5,
+  "WhatsApp": 0.75,
+  "X": 0.4
+}
