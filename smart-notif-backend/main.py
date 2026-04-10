@@ -35,11 +35,11 @@ app.add_middleware(
 	allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(notifications_router)
-app.include_router(priority_router)
-app.include_router(automation_router)
-app.include_router(report_router)
+app.include_router(auth_router, prefix="/auth")
+app.include_router(notifications_router, prefix="/notifications")
+app.include_router(priority_router, prefix="/priority")
+app.include_router(automation_router, prefix="/automation")
+app.include_router(report_router, prefix="/report")
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)

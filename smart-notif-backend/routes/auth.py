@@ -1,103 +1,143 @@
 import os
-from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+import requests
+from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
 from database.supabase_client import get_supabase_client
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+GOOGLE_SCOPES = [
+	"https://www.googleapis.com/auth/gmail.readonly",
+	"https://www.googleapis.com/auth/calendar.readonly",
+	"https://www.googleapis.com/auth/userinfo.email",
+	"https://www.googleapis.com/auth/userinfo.profile",
+]
 
 
-class GoogleOAuthRequest(BaseModel):
-	redirect_to: str | None = Field(default=None)
-
-
-class GoogleOAuthResponse(BaseModel):
-	provider: str
-	auth_url: str
+class GoogleOAuthURLResponse(BaseModel):
+	oauth_url: str
 
 
 class LogoutRequest(BaseModel):
-	access_token: str | None = None
-	refresh_token: str | None = None
+	user_id: str
 
 
 class LogoutResponse(BaseModel):
 	message: str
 
 
-def _extract_auth_url(oauth_result: Any) -> str | None:
-	if isinstance(oauth_result, dict):
-		return oauth_result.get("url")
-
-	direct_url = getattr(oauth_result, "url", None)
-	if direct_url:
-		return direct_url
-
-	data = getattr(oauth_result, "data", None)
-	if isinstance(data, dict):
-		return data.get("url")
-
-	return None
-
-
-@router.post(
-	"/google",
-	response_model=GoogleOAuthResponse,
-	status_code=status.HTTP_200_OK,
-)
-def google_oauth_login(payload: GoogleOAuthRequest) -> GoogleOAuthResponse:
-	supabase = get_supabase_client()
-	redirect_to = payload.redirect_to or os.getenv("GOOGLE_REDIRECT_URI")
-
-	if not redirect_to:
+def _required_env(var_name: str) -> str:
+	value = os.getenv(var_name)
+	if not value:
 		raise HTTPException(
 			status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-			detail="GOOGLE_REDIRECT_URI is not configured.",
+			detail=f"Missing required environment variable: {var_name}",
 		)
-
-	try:
-		oauth_result = supabase.auth.sign_in_with_oauth(
-			{
-				"provider": "google",
-				"options": {"redirect_to": redirect_to},
-			}
-		)
-		auth_url = _extract_auth_url(oauth_result)
-
-		if not auth_url:
-			raise HTTPException(
-				status_code=status.HTTP_502_BAD_GATEWAY,
-				detail="Failed to generate Google OAuth URL from Supabase.",
-			)
-
-		return GoogleOAuthResponse(provider="google", auth_url=auth_url)
-	except HTTPException:
-		raise
-	except Exception as exc:
-		raise HTTPException(
-			status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-			detail=f"Google OAuth initialization failed: {exc}",
-		) from exc
+	return value
 
 
-@router.post(
-	"/logout",
-	response_model=LogoutResponse,
-	status_code=status.HTTP_200_OK,
-)
-def logout(payload: LogoutRequest) -> LogoutResponse:
-	supabase = get_supabase_client()
+@router.get("/google", response_model=GoogleOAuthURLResponse, status_code=status.HTTP_200_OK)
+def get_google_oauth_url() -> GoogleOAuthURLResponse:
+	client_id = _required_env("GOOGLE_CLIENT_ID")
+	redirect_uri = _required_env("GOOGLE_REDIRECT_URI")
 
-	try:
-		if payload.access_token and payload.refresh_token:
-			supabase.auth.set_session(payload.access_token, payload.refresh_token)
+	query = urlencode(
+		{
+			"client_id": client_id,
+			"redirect_uri": redirect_uri,
+			"response_type": "code",
+			"scope": " ".join(GOOGLE_SCOPES),
+			"access_type": "offline",
+			"prompt": "consent",
+		},
+	)
 
-		supabase.auth.sign_out()
-		return LogoutResponse(message="Logged out successfully.")
-	except Exception as exc:
+	return GoogleOAuthURLResponse(oauth_url=f"{GOOGLE_AUTH_URL}?{query}")
+
+
+@router.get("/callback", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+def google_oauth_callback(code: str = Query(...)) -> RedirectResponse:
+	client_id = _required_env("GOOGLE_CLIENT_ID")
+	client_secret = _required_env("GOOGLE_CLIENT_SECRET")
+	redirect_uri = _required_env("GOOGLE_REDIRECT_URI")
+	frontend_url = os.getenv("FRONTEND_URL", "http://127.0.0.1:5173")
+
+	token_response = requests.post(
+		GOOGLE_TOKEN_URL,
+		data={
+			"client_id": client_id,
+			"client_secret": client_secret,
+			"code": code,
+			"redirect_uri": redirect_uri,
+			"grant_type": "authorization_code",
+		},
+		timeout=20,
+	)
+
+	if token_response.status_code != status.HTTP_200_OK:
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
-			detail=f"Logout failed: {exc}",
-		) from exc
+			detail=f"Failed to exchange Google code: {token_response.text}",
+		)
+
+	access_token = token_response.json().get("access_token")
+	if not access_token:
+		raise HTTPException(
+			status_code=status.HTTP_400_BAD_REQUEST,
+			detail="Google token exchange did not return access_token.",
+		)
+
+	profile_response = requests.get(
+		GOOGLE_USERINFO_URL,
+		headers={"Authorization": f"Bearer {access_token}"},
+		timeout=20,
+	)
+
+	if profile_response.status_code != status.HTTP_200_OK:
+		raise HTTPException(
+			status_code=status.HTTP_400_BAD_REQUEST,
+			detail=f"Failed to fetch Google user profile: {profile_response.text}",
+		)
+
+	profile = profile_response.json()
+	google_sub = str(profile.get("id", "")).strip()
+	name = str(profile.get("name", "")).strip() or "Google User"
+	email = str(profile.get("email", "")).strip()
+
+	if not google_sub or not email:
+		raise HTTPException(
+			status_code=status.HTTP_400_BAD_REQUEST,
+			detail="Google profile missing required id/email fields.",
+		)
+
+	supabase = get_supabase_client()
+	supabase.table("users").upsert(
+		{
+			"user_id": google_sub,
+			"username": name,
+			"email_id": email,
+		},
+		on_conflict="user_id",
+	).execute()
+
+	redirect_query = urlencode(
+		{
+			"user_id": google_sub,
+			"username": name,
+			"email": email,
+		}
+	)
+	return RedirectResponse(url=f"{frontend_url}/dashboard?{redirect_query}")
+
+
+@router.post("/logout", response_model=LogoutResponse, status_code=status.HTTP_200_OK)
+def logout(_payload: LogoutRequest) -> LogoutResponse:
+	return LogoutResponse(message="logged out")
