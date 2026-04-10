@@ -1,0 +1,30 @@
+# Python virtual environments
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# Python caches and build artifacts
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Node dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
