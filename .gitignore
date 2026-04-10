@@ -7,4 +7,6 @@ __pycache__/
 *.pyd
 .pytest_cache/
 **/.pytest_cache/
+.env
+**/.env
 .env.local
