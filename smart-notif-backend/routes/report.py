@@ -10,7 +10,7 @@ from database.supabase_client import get_supabase_client
 from models.schemas import ReportRequest, ReportResponse
 from services.ranking_service import update_bandit_after_report
 
-router = APIRouter(prefix="/report", tags=["report"])
+router = APIRouter(tags=["report"])
 
 
 class ReportLogResponse(BaseModel):

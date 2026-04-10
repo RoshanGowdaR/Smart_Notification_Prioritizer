@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from database.supabase_client import get_supabase_client
 from models.schemas import PriorityRequest, PriorityResponse
 
-router = APIRouter(prefix="/priority", tags=["priority"])
+router = APIRouter(tags=["priority"])
 
 
 @router.get(
@@ -36,10 +36,30 @@ def get_user_priority(user_id: UUID) -> PriorityResponse:
 		) from exc
 
 	if not row:
-		raise HTTPException(
-			status_code=status.HTTP_404_NOT_FOUND,
-			detail="Priority settings not found for this user.",
-		)
+		default_row = {
+			"user_id": str(user_id),
+			"priority_apps": {"Gmail": 1, "Google Calendar": 1},
+			"keyword_rules": {"Gmail": {}, "Google Calendar": {}},
+			"ranking_weights": {"urgency": 0.4, "recency": 0.3, "category": 0.3},
+			"updated_at": datetime.now(timezone.utc).isoformat(),
+		}
+		try:
+			insert_result = supabase.table("priority").insert(default_row).execute()
+		except Exception as exc:
+			# Backward-compatible fallback when keyword_rules column is not migrated yet.
+			if "keyword_rules" not in str(exc):
+				raise
+			fallback_row = {**default_row}
+			fallback_row.pop("keyword_rules", None)
+			insert_result = supabase.table("priority").insert(fallback_row).execute()
+		row = (insert_result.data or [None])[0]
+		if not row:
+			raise HTTPException(
+				status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+				detail="Failed to initialize priority settings for user.",
+			)
+
+	row.setdefault("keyword_rules", {"Gmail": {}, "Google Calendar": {}})
 
 	return PriorityResponse(**row)
 
@@ -71,22 +91,42 @@ def set_user_priority(payload: PriorityRequest, response: Response) -> PriorityR
 	update_payload = {
 		"user_id": str(payload.user_id),
 		"priority_apps": payload.priority_apps,
+		"keyword_rules": payload.keyword_rules,
 		"ranking_weights": payload.ranking_weights,
 		"updated_at": datetime.now(timezone.utc).isoformat(),
 	}
 
 	try:
 		if existing_row:
-			result = (
-				supabase.table("priority")
-				.update(update_payload)
-				.eq("priority_id", existing_row["priority_id"])
-				.execute()
-			)
+			try:
+				result = (
+					supabase.table("priority")
+					.update(update_payload)
+					.eq("priority_id", existing_row["priority_id"])
+					.execute()
+				)
+			except Exception as exc:
+				if "keyword_rules" not in str(exc):
+					raise
+				fallback_payload = {**update_payload}
+				fallback_payload.pop("keyword_rules", None)
+				result = (
+					supabase.table("priority")
+					.update(fallback_payload)
+					.eq("priority_id", existing_row["priority_id"])
+					.execute()
+				)
 			row = (result.data or [None])[0]
 			response.status_code = status.HTTP_200_OK
 		else:
-			result = supabase.table("priority").insert(update_payload).execute()
+			try:
+				result = supabase.table("priority").insert(update_payload).execute()
+			except Exception as exc:
+				if "keyword_rules" not in str(exc):
+					raise
+				fallback_payload = {**update_payload}
+				fallback_payload.pop("keyword_rules", None)
+				result = supabase.table("priority").insert(fallback_payload).execute()
 			row = (result.data or [None])[0]
 			response.status_code = status.HTTP_201_CREATED
 	except Exception as exc:
@@ -100,5 +140,7 @@ def set_user_priority(payload: PriorityRequest, response: Response) -> PriorityR
 			status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 			detail="Priority operation returned no data.",
 		)
+
+	row.setdefault("keyword_rules", payload.keyword_rules or {"Gmail": {}, "Google Calendar": {}})
 
 	return PriorityResponse.model_validate(row)

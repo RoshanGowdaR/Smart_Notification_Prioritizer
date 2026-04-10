@@ -9,10 +9,10 @@ from pydantic import BaseModel
 
 from database.supabase_client import get_supabase_client
 from models.schemas import AutomationRequest, AutomationResponse
-from services.forward_service import build_forward_message, forward_notification
+from services.forward_service import forward_notification
 from services.ranking_service import compute_notification_score
 
-router = APIRouter(prefix="/automation", tags=["automation"])
+router = APIRouter(tags=["automation"])
 
 
 class AutomationTriggerResponse(BaseModel):
@@ -88,12 +88,12 @@ def trigger_automation(payload: AutomationRequest) -> AutomationTriggerResponse:
 			detail=f"Notification ranking score {ranking_score:.4f} below threshold {threshold:.4f}.",
 		)
 
-	message = build_forward_message(
+	dispatch = forward_notification(
+		channel=payload.channel.value,
+		to_number=user_row["ph_num"],
 		app_name=notif["app_name"],
 		content=notif["content"],
-		reply_template=payload.reply_template,
 	)
-	dispatch = forward_notification(payload.channel, user_row["ph_num"], message)
 
 	insert_payload = {
 		"user_id": str(payload.user_id),
@@ -115,7 +115,7 @@ def trigger_automation(payload: AutomationRequest) -> AutomationTriggerResponse:
 		automation=AutomationResponse.model_validate(automation_row),
 		ranking_score=round(ranking_score, 4),
 		forward_status=dispatch["status"],
-		provider_message_id=dispatch["provider_message_id"],
+		provider_message_id=dispatch["sid"],
 	)
 
 

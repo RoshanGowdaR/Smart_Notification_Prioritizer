@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from database.supabase_client import get_supabase_client
 from models.schemas import NotificationCategory, NotificationRequest, NotificationResponse
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(tags=["notifications"])
 
 _CATEGORY_URGENCY: dict[NotificationCategory, float] = {
 	NotificationCategory.work: 1.0,
@@ -43,29 +43,80 @@ def _score_notification(
 	notification: dict,
 	app_weight: float,
 	category_urgency: float,
+	keyword_boost: float,
 ) -> float:
 	recency = _recency_score(_parse_received_at(notification["received_at"]))
-	return (app_weight * 0.4) + (recency * 0.3) + (category_urgency * 0.3)
+	return (app_weight * 0.4) + (recency * 0.3) + (category_urgency * 0.2) + (keyword_boost * 0.1)
 
 
-def _get_user_priority_maps(user_id: UUID) -> tuple[dict[str, float], dict[str, float]]:
+def _normalize_app_key(value: str) -> str:
+	normalized = value.strip().lower()
+	if normalized in {"calendar", "google calendar", "gcal", "google_calendar"}:
+		return "google calendar"
+	if normalized in {"gmail", "google mail"}:
+		return "gmail"
+	return normalized
+
+
+def _keyword_boost_for_notification(
+	app_name: str,
+	content: str,
+	keyword_rules: dict[str, dict[str, int]],
+) -> float:
+	normalized_rules: dict[str, dict[str, int]] = {}
+	for raw_app, rules in keyword_rules.items():
+		app_key = _normalize_app_key(raw_app)
+		normalized_rules[app_key] = {}
+		for raw_keyword, raw_level in (rules or {}).items():
+			keyword = str(raw_keyword).strip().lower()
+			level = int(raw_level) if str(raw_level).strip() else 0
+			if keyword:
+				normalized_rules[app_key][keyword] = max(1, min(5, level))
+
+	app_key = _normalize_app_key(app_name)
+	rules_for_app = normalized_rules.get(app_key, {})
+	if not rules_for_app:
+		return 0.0
+
+	content_lower = (content or "").lower()
+	matched_levels = [level for keyword, level in rules_for_app.items() if keyword in content_lower]
+	if not matched_levels:
+		return 0.0
+
+	return max(matched_levels) / 5.0
+
+
+def _get_user_priority_maps(user_id: UUID) -> tuple[dict[str, float], dict[str, float], dict[str, dict[str, int]]]:
 	supabase = get_supabase_client()
-	priority_result = (
-		supabase.table("priority")
-		.select("priority_apps, ranking_weights")
-		.eq("user_id", str(user_id))
-		.order("updated_at", desc=True)
-		.limit(1)
-		.execute()
-	)
+	try:
+		priority_result = (
+			supabase.table("priority")
+			.select("priority_apps, ranking_weights, keyword_rules")
+			.eq("user_id", str(user_id))
+			.order("updated_at", desc=True)
+			.limit(1)
+			.execute()
+		)
+	except Exception as exc:
+		if "keyword_rules" not in str(exc):
+			raise
+		priority_result = (
+			supabase.table("priority")
+			.select("priority_apps, ranking_weights")
+			.eq("user_id", str(user_id))
+			.order("updated_at", desc=True)
+			.limit(1)
+			.execute()
+		)
 
 	if not priority_result.data:
-		return {}, {}
+		return {}, {}, {}
 
 	priority_row = priority_result.data[0]
 	priority_apps = priority_row.get("priority_apps") or {}
 	ranking_weights = priority_row.get("ranking_weights") or {}
-	return priority_apps, ranking_weights
+	keyword_rules = priority_row.get("keyword_rules") or {}
+	return priority_apps, ranking_weights, keyword_rules
 
 
 @router.get(
@@ -93,14 +144,24 @@ def get_ranked_notifications(user_id: UUID) -> list[RankedNotificationResponse]:
 	if not notifications:
 		return []
 
-	priority_apps, _ = _get_user_priority_maps(user_id)
+	priority_apps, _, keyword_rules = _get_user_priority_maps(user_id)
 
 	ranked: list[RankedNotificationResponse] = []
 	for notif in notifications:
 		category = NotificationCategory(notif["category"])
 		app_weight = float(priority_apps.get(notif["app_name"], 1.0))
 		category_urgency = _CATEGORY_URGENCY.get(category, 0.5)
-		score = _score_notification(notif, app_weight=app_weight, category_urgency=category_urgency)
+		keyword_boost = _keyword_boost_for_notification(
+			app_name=notif.get("app_name", ""),
+			content=notif.get("content", ""),
+			keyword_rules=keyword_rules,
+		)
+		score = _score_notification(
+			notif,
+			app_weight=app_weight,
+			category_urgency=category_urgency,
+			keyword_boost=keyword_boost,
+		)
 
 		ranked.append(
 			RankedNotificationResponse(

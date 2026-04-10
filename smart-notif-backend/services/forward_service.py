@@ -1,65 +1,32 @@
-from __future__ import annotations
-
+from twilio.rest import Client
+from dotenv import load_dotenv
 import os
-from datetime import datetime, timezone
 
-from models.schemas import ChannelType
-
-
-def _is_dry_run_enabled() -> bool:
-	return os.getenv("FORWARD_DRY_RUN", "true").strip().lower() in {"1", "true", "yes", "on"}
+load_dotenv()
 
 
-def _normalize_phone_number(phone_number: str) -> str:
-	number = phone_number.strip()
-	if not number:
-		raise ValueError("Target phone number is empty.")
-	return number
-
-
-def build_forward_message(app_name: str, content: str, reply_template: str) -> str:
-	return (
-		f"[Smart Notification Prioritizer]\n"
-		f"App: {app_name}\n"
-		f"Notification: {content}\n"
-		f"Suggested Reply: {reply_template}"
+def send_sms(to_number: str, message: str) -> dict:
+	client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+	msg = client.messages.create(
+		body=message,
+		from_=os.getenv("TWILIO_PHONE_NUMBER"),
+		to=to_number,
 	)
+	return {"sid": msg.sid, "status": msg.status}
 
 
-def forward_notification(channel: ChannelType | str, target_phone: str, message: str) -> dict:
-	parsed_channel = channel if isinstance(channel, ChannelType) else ChannelType(channel)
-	normalized_phone = _normalize_phone_number(target_phone)
-	dry_run = _is_dry_run_enabled()
+def send_whatsapp(to_number: str, message: str) -> dict:
+	client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+	msg = client.messages.create(
+		body=message,
+		from_=os.getenv("TWILIO_WHATSAPP_NUMBER"),
+		to=f"whatsapp:{to_number}",
+	)
+	return {"sid": msg.sid, "status": msg.status}
 
-	# In hackathon/dev mode we return deterministic metadata without provider API calls.
-	if dry_run:
-		return {
-			"provider": "dry-run",
-			"channel": parsed_channel.value,
-			"to": normalized_phone,
-			"status": "queued",
-			"message_preview": message,
-			"provider_message_id": f"dry-{parsed_channel.value}-{int(datetime.now(timezone.utc).timestamp())}",
-			"sent_at": datetime.now(timezone.utc).isoformat(),
-		}
 
-	# Production mode can be wired to Twilio REST calls in a later hardening step.
-	# We enforce credentials now so missing secrets fail fast.
-	required_vars = [
-		"TWILIO_ACCOUNT_SID",
-		"TWILIO_AUTH_TOKEN",
-		"TWILIO_WHATSAPP_FROM" if parsed_channel == ChannelType.whatsapp else "TWILIO_SMS_FROM",
-	]
-	missing = [name for name in required_vars if not os.getenv(name)]
-	if missing:
-		raise RuntimeError(f"Missing forwarding configuration: {', '.join(missing)}")
-
-	return {
-		"provider": "twilio",
-		"channel": parsed_channel.value,
-		"to": normalized_phone,
-		"status": "accepted",
-		"message_preview": message,
-		"provider_message_id": f"pending-{parsed_channel.value}-{int(datetime.now(timezone.utc).timestamp())}",
-		"sent_at": datetime.now(timezone.utc).isoformat(),
-	}
+def forward_notification(channel: str, to_number: str, app_name: str, content: str) -> dict:
+	message = f"[NotifyAI] {app_name}: {content}"
+	if channel == "whatsapp":
+		return send_whatsapp(to_number, message)
+	return send_sms(to_number, message)
