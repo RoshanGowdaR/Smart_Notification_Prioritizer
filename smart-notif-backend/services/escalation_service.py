@@ -163,7 +163,7 @@ async def check_and_escalate(
 	except Exception:
 		pass
 
-	await asyncio.sleep(300)
+	await asyncio.sleep(30)
 
 	reply_check = (
 		supabase.table("automation")

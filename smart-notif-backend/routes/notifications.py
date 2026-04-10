@@ -211,7 +211,7 @@ def add_notification(payload: NotificationRequest, background_tasks: BackgroundT
 		inserted["user_id"],
 		inserted["app_name"],
 		inserted["content"],
-		300,
+		30,
 	)
 
 	return NotificationResponse(**inserted)
