@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import client from "../api/client";
 import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
+import { supabase } from "../lib/supabase";
 
 export default function Profile() {
   const { user_id: userId, username, email, setUser } = useUser();
@@ -17,106 +18,150 @@ export default function Profile() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
-    setName(username || "");
-    setEmailValue(email || "");
-    setPhone("");
-  }, [username, email]);
+    let isMounted = true;
 
-  const handleSaveChanges = () => {
+    const loadProfile = async () => {
+      setName(username || "");
+      setEmailValue(email || "");
+
+      if (!userId) {
+        return;
+      }
+
+      try {
+        const response = await client.get(`/users/${userId}`);
+        const data = response?.data || {};
+        if (!isMounted) {
+          return;
+        }
+        setName(data.username || username || "");
+        setEmailValue(data.email_id || email || "");
+        setPhone(data.ph_num || "");
+        setUser({
+          username: data.username || username || "",
+          email: data.email_id || email || "",
+          phone: data.ph_num || "",
+        });
+      } catch (_error) {
+        if (isMounted) {
+          setPhone("");
+        }
+      }
+    };
+
+    loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [username, email, userId, setUser]);
+
+  const handleSaveChanges = async () => {
     setIsSaving(true);
     setSaveMessage("");
 
-    window.setTimeout(() => {
-      setUser({ username: name, email: emailValue });
-      setSaveMessage("Saved!");
-      setIsSaving(false);
+    try {
+      await client.post("/users/upsert", {
+        user_id: userId,
+        username: name,
+        email_id: emailValue,
+        ph_num: phone,
+      });
+      setUser({ username: name, email: emailValue, phone });
+      setSaveMessage("Profile saved successfully.");
 
       window.setTimeout(() => {
         setSaveMessage("");
-      }, 3000);
-    }, 500);
+      }, 2500);
+    } catch (_error) {
+      setSaveMessage("Failed to save profile.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await client.post("/auth/logout", {});
+      await supabase.auth.signOut({ scope: "global" });
     } catch (_error) {
-      // Continue logout for demo even if API is unavailable.
+      // Continue logout flow even if upstream sign-out fails.
     } finally {
-      setUser({ user_id: "", username: "", email: "" });
+      setUser({ user_id: "", username: "", email: "", phone: "" });
       setIsLoggingOut(false);
       navigate("/");
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="shell">
       <Navbar />
 
-      <main className="mx-auto flex max-w-5xl justify-center px-4 py-10 sm:px-6 lg:px-8">
-        <section className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-xl shadow-black/30">
-          <h1 className="text-2xl font-bold text-white">Profile</h1>
-          <p className="mt-1 text-sm text-gray-300">Manage your account details for NotifyAI.</p>
+      <main className="section-wrap flex justify-center py-10">
+        <section className="panel w-full max-w-2xl p-6 sm:p-8">
+          <p className="kicker">Account</p>
+          <h1 className="mt-3 text-2xl font-black uppercase tracking-[0.04em] text-[#102447]">Profile</h1>
+          <p className="mt-1 text-sm text-[#4f648c]">Manage your identity and contact details used by NotifyAI automation.</p>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 grid gap-4">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-400">Name</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-[#5f789f]">Name</span>
               <input
                 type="text"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white outline-none ring-cyan-400 transition focus:ring-2"
+                className="w-full rounded-xl border border-[#c6d7ef] bg-white px-3 py-2 text-[#193a6a] outline-none transition focus:border-[#0B3D91]"
               />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-400">Email</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-[#5f789f]">Email</span>
               <input
                 type="email"
                 value={emailValue}
                 disabled
-                className="w-full cursor-not-allowed rounded-lg border border-gray-700 bg-gray-800/70 px-3 py-2 text-gray-300 outline-none"
+                className="w-full cursor-not-allowed rounded-xl border border-[#d7e3f5] bg-[#f2f6fc] px-3 py-2 text-[#7a8eaf] outline-none"
               />
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-400">Phone</span>
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-[#5f789f]">Phone</span>
               <input
                 type="tel"
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
                 placeholder="+91 98765 43210"
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white outline-none ring-cyan-400 transition focus:ring-2"
+                className="w-full rounded-xl border border-[#c6d7ef] bg-white px-3 py-2 text-[#193a6a] outline-none transition focus:border-[#0B3D91]"
               />
             </label>
           </div>
 
           {saveMessage && (
-            <p className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-300">
+            <p className="mt-4 rounded-xl border border-[#c7d8f2] bg-[#eef5ff] px-3 py-2 text-sm font-medium text-[#1f4f96]">
               {saveMessage}
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={handleSaveChanges}
-            disabled={isSaving}
-            className="mt-6 w-full rounded-lg bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-gray-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleSaveChanges}
+              disabled={isSaving}
+              className="btn-ink h-11 w-full disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-            className="mt-3 w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isLoggingOut ? "Logging out..." : "Logout"}
-          </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="h-11 w-full rounded-xl border border-[#f1c3c1] bg-[#fff4f4] px-4 text-sm font-semibold text-[#b4302b] transition hover:bg-[#ffe8e8] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isLoggingOut ? "Logging out..." : "Logout"}
+            </button>
+          </div>
 
-          <p className="mt-6 text-xs text-gray-500">User ID: {userId || "test-user-001"}</p>
+          <p className="mt-6 text-xs uppercase tracking-[0.08em] text-[#6881a7]">User ID: {userId || "test-user-001"}</p>
         </section>
       </main>
     </div>

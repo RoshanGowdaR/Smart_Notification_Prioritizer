@@ -1,8 +1,8 @@
 const categoryBadgeStyles = {
-  work: "bg-blue-500/20 text-blue-300",
-  social: "bg-green-500/20 text-green-300",
-  promo: "bg-yellow-500/20 text-yellow-300",
-  system: "bg-red-500/20 text-red-300",
+  work: "border border-[#b9d2ff] bg-[#edf4ff] text-[#1d4f9f]",
+  social: "border border-[#d0d6ff] bg-[#f1f4ff] text-[#4253a8]",
+  promo: "border border-[#f5ddb8] bg-[#fff5e8] text-[#9a6118]",
+  system: "border border-[#cce8e7] bg-[#ecf8f7] text-[#17706a]",
 };
 
 export default function NotificationCard({
@@ -14,16 +14,16 @@ export default function NotificationCard({
   is_seen,
   onMarkSeen,
 }) {
-  const badgeStyle = categoryBadgeStyles[category] || "bg-gray-500/20 text-gray-300";
+  const badgeStyle = categoryBadgeStyles[category] || "border border-[#222222] bg-[#000000] text-[#888888]";
 
   return (
-    <article className="rounded-2xl border border-gray-800 bg-gray-900 p-4">
+    <article className="panel-soft p-4 transition hover:-translate-y-[1px] hover:border-[#bdd1ee]">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-white">{app_name}</p>
-          <p className="mt-1 text-sm text-gray-300">{content}</p>
+          <p className="text-[13px] font-black uppercase tracking-[0.12em] text-[#153466]">{app_name}</p>
+          <p className="mt-2 text-sm text-[#475f87]">{content}</p>
         </div>
-        <span className="rounded-full bg-cyan-500/20 px-2.5 py-1 text-xs font-semibold text-cyan-300">
+        <span className="rounded-full border border-[#b7c9e7] bg-[#f2f7ff] px-2.5 py-1 text-xs font-semibold text-[#18427f]">
           Score {Number(ranking_score || 0).toFixed(2)}
         </span>
       </div>
@@ -34,14 +34,14 @@ export default function NotificationCard({
         </span>
 
         {is_seen ? (
-          <span className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-300">
+          <span className="rounded-full border border-[#c8d8f0] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#1e4c93]">
             ✓ Seen
           </span>
         ) : (
           <button
             type="button"
             onClick={() => onMarkSeen(notif_id)}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+            className="btn-ink h-8 px-3 text-xs"
           >
             Mark Seen
           </button>
