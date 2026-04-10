@@ -1,0 +1,452 @@
+[
+  {
+    "notif_id": "mock-8",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T02:13:35.296471+00:00"
+  },
+  {
+    "notif_id": "mock-44",
+    "user_id": "simulation-user",
+    "app_name": "Telegram",
+    "content": "Synthetic social alert from Telegram",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T02:21:06.564289+00:00"
+  },
+  {
+    "notif_id": "mock-49",
+    "user_id": "simulation-user",
+    "app_name": "Security",
+    "content": "Synthetic system alert from Security",
+    "category": "system",
+    "is_seen": false,
+    "received_at": "2026-04-10T00:50:06.766283+00:00"
+  },
+  {
+    "notif_id": "mock-39",
+    "user_id": "simulation-user",
+    "app_name": "X",
+    "content": "Synthetic social alert from X",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T13:33:12.571888+00:00"
+  },
+  {
+    "notif_id": "mock-45",
+    "user_id": "simulation-user",
+    "app_name": "WhatsApp",
+    "content": "Synthetic social alert from WhatsApp",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T01:07:07.273283+00:00"
+  },
+  {
+    "notif_id": "mock-38",
+    "user_id": "simulation-user",
+    "app_name": "Telegram",
+    "content": "Synthetic social alert from Telegram",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T01:37:25.405288+00:00"
+  },
+  {
+    "notif_id": "mock-7",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T14:02:04.385807+00:00"
+  },
+  {
+    "notif_id": "mock-26",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T03:49:31.650578+00:00"
+  },
+  {
+    "notif_id": "mock-12",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T18:39:59.178949+00:00"
+  },
+  {
+    "notif_id": "mock-16",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T21:15:12.000889+00:00"
+  },
+  {
+    "notif_id": "mock-10",
+    "user_id": "simulation-user",
+    "app_name": "Slack",
+    "content": "Synthetic work alert from Slack",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T21:50:31.644276+00:00"
+  },
+  {
+    "notif_id": "mock-27",
+    "user_id": "simulation-user",
+    "app_name": "Amazon",
+    "content": "Synthetic promo alert from Amazon",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T00:34:45.119060+00:00"
+  },
+  {
+    "notif_id": "mock-2",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T00:21:37.473862+00:00"
+  },
+  {
+    "notif_id": "mock-29",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T03:04:24.733360+00:00"
+  },
+  {
+    "notif_id": "mock-47",
+    "user_id": "simulation-user",
+    "app_name": "Updates",
+    "content": "Synthetic system alert from Updates",
+    "category": "system",
+    "is_seen": false,
+    "received_at": "2026-04-09T20:19:14.115926+00:00"
+  },
+  {
+    "notif_id": "mock-41",
+    "user_id": "simulation-user",
+    "app_name": "Instagram",
+    "content": "Synthetic social alert from Instagram",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T13:07:37.322735+00:00"
+  },
+  {
+    "notif_id": "mock-4",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T20:13:49.421777+00:00"
+  },
+  {
+    "notif_id": "mock-13",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T20:39:03.453330+00:00"
+  },
+  {
+    "notif_id": "mock-33",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-09T22:15:13.101274+00:00"
+  },
+  {
+    "notif_id": "mock-23",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T14:17:35.072598+00:00"
+  },
+  {
+    "notif_id": "mock-40",
+    "user_id": "simulation-user",
+    "app_name": "WhatsApp",
+    "content": "Synthetic social alert from WhatsApp",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-09T21:02:48.242234+00:00"
+  },
+  {
+    "notif_id": "mock-28",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:40:22.862512+00:00"
+  },
+  {
+    "notif_id": "mock-43",
+    "user_id": "simulation-user",
+    "app_name": "X",
+    "content": "Synthetic social alert from X",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T08:35:55.378866+00:00"
+  },
+  {
+    "notif_id": "mock-11",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:07:50.201526+00:00"
+  },
+  {
+    "notif_id": "mock-3",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T04:50:45.713281+00:00"
+  },
+  {
+    "notif_id": "mock-6",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T21:35:24.701444+00:00"
+  },
+  {
+    "notif_id": "mock-36",
+    "user_id": "simulation-user",
+    "app_name": "X",
+    "content": "Synthetic social alert from X",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T12:15:37.652240+00:00"
+  },
+  {
+    "notif_id": "mock-31",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-09T19:15:16.973674+00:00"
+  },
+  {
+    "notif_id": "mock-30",
+    "user_id": "simulation-user",
+    "app_name": "Myntra",
+    "content": "Synthetic promo alert from Myntra",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T00:53:40.204564+00:00"
+  },
+  {
+    "notif_id": "mock-17",
+    "user_id": "simulation-user",
+    "app_name": "Slack",
+    "content": "Synthetic work alert from Slack",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T21:12:05.838110+00:00"
+  },
+  {
+    "notif_id": "mock-18",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T16:12:37.852252+00:00"
+  },
+  {
+    "notif_id": "mock-34",
+    "user_id": "simulation-user",
+    "app_name": "Myntra",
+    "content": "Synthetic promo alert from Myntra",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T10:24:53.588978+00:00"
+  },
+  {
+    "notif_id": "mock-24",
+    "user_id": "simulation-user",
+    "app_name": "Flipkart",
+    "content": "Synthetic promo alert from Flipkart",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T04:02:35.302654+00:00"
+  },
+  {
+    "notif_id": "mock-48",
+    "user_id": "simulation-user",
+    "app_name": "Drive",
+    "content": "Synthetic system alert from Drive",
+    "category": "system",
+    "is_seen": false,
+    "received_at": "2026-04-10T03:58:33.538718+00:00"
+  },
+  {
+    "notif_id": "mock-9",
+    "user_id": "simulation-user",
+    "app_name": "Calendar",
+    "content": "Synthetic work alert from Calendar",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T23:30:17.429251+00:00"
+  },
+  {
+    "notif_id": "mock-35",
+    "user_id": "simulation-user",
+    "app_name": "Swiggy",
+    "content": "Synthetic promo alert from Swiggy",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T12:16:00.854274+00:00"
+  },
+  {
+    "notif_id": "mock-15",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T05:30:55.968818+00:00"
+  },
+  {
+    "notif_id": "mock-14",
+    "user_id": "simulation-user",
+    "app_name": "Jira",
+    "content": "Synthetic work alert from Jira",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-09T18:25:31.459932+00:00"
+  },
+  {
+    "notif_id": "mock-1",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T11:43:21.526650+00:00"
+  },
+  {
+    "notif_id": "mock-37",
+    "user_id": "simulation-user",
+    "app_name": "Instagram",
+    "content": "Synthetic social alert from Instagram",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T01:12:15.617900+00:00"
+  },
+  {
+    "notif_id": "mock-21",
+    "user_id": "simulation-user",
+    "app_name": "Myntra",
+    "content": "Synthetic promo alert from Myntra",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T02:06:14.404607+00:00"
+  },
+  {
+    "notif_id": "mock-25",
+    "user_id": "simulation-user",
+    "app_name": "Amazon",
+    "content": "Synthetic promo alert from Amazon",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:48:25.556374+00:00"
+  },
+  {
+    "notif_id": "mock-42",
+    "user_id": "simulation-user",
+    "app_name": "Instagram",
+    "content": "Synthetic social alert from Instagram",
+    "category": "social",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:45:26.702778+00:00"
+  },
+  {
+    "notif_id": "mock-50",
+    "user_id": "simulation-user",
+    "app_name": "Updates",
+    "content": "Synthetic system alert from Updates",
+    "category": "system",
+    "is_seen": false,
+    "received_at": "2026-04-10T02:17:13.689797+00:00"
+  },
+  {
+    "notif_id": "mock-46",
+    "user_id": "simulation-user",
+    "app_name": "Drive",
+    "content": "Synthetic system alert from Drive",
+    "category": "system",
+    "is_seen": false,
+    "received_at": "2026-04-10T14:02:45.533990+00:00"
+  },
+  {
+    "notif_id": "mock-20",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T07:33:38.432779+00:00"
+  },
+  {
+    "notif_id": "mock-5",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:33:01.295251+00:00"
+  },
+  {
+    "notif_id": "mock-22",
+    "user_id": "simulation-user",
+    "app_name": "Myntra",
+    "content": "Synthetic promo alert from Myntra",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T15:25:38.546955+00:00"
+  },
+  {
+    "notif_id": "mock-32",
+    "user_id": "simulation-user",
+    "app_name": "Amazon",
+    "content": "Synthetic promo alert from Amazon",
+    "category": "promo",
+    "is_seen": false,
+    "received_at": "2026-04-10T06:00:03.502407+00:00"
+  },
+  {
+    "notif_id": "mock-19",
+    "user_id": "simulation-user",
+    "app_name": "Gmail",
+    "content": "Synthetic work alert from Gmail",
+    "category": "work",
+    "is_seen": false,
+    "received_at": "2026-04-10T09:05:53.007025+00:00"
+  }
+]
