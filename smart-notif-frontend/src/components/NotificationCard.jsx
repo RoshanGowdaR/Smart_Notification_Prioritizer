@@ -1,47 +1,78 @@
 const categoryBadgeStyles = {
-  work: "border border-[#b9d2ff] bg-[#edf4ff] text-[#1d4f9f]",
-  social: "border border-[#d0d6ff] bg-[#f1f4ff] text-[#4253a8]",
-  promo: "border border-[#f5ddb8] bg-[#fff5e8] text-[#9a6118]",
-  system: "border border-[#cce8e7] bg-[#ecf8f7] text-[#17706a]",
+  work: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300",
+  social: "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300",
+  promo: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300",
+  system: "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400",
 };
+
+function getScoreBadgeStyle(score) {
+  if (score >= 0.8) {
+    return "bg-indigo-600 text-white";
+  }
+  if (score >= 0.6) {
+    return "bg-cyan-500/20 text-cyan-600 dark:text-cyan-300";
+  }
+  if (score >= 0.4) {
+    return "bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400";
+  }
+  return "bg-gray-100 text-gray-400 dark:bg-white/5 dark:text-gray-500";
+}
 
 export default function NotificationCard({
   app_name,
   content,
   category,
   ranking_score,
+  matched_keyword,
+  matched_priority,
+  received_at,
   notif_id,
   is_seen,
   onMarkSeen,
 }) {
-  const badgeStyle = categoryBadgeStyles[category] || "border border-[#222222] bg-[#000000] text-[#888888]";
+  const safeScore = Number(ranking_score || 0);
+  const categoryStyle = categoryBadgeStyles[category] || "bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400";
+  const scoreStyle = getScoreBadgeStyle(safeScore);
 
   return (
-    <article className="panel-soft p-4 transition hover:-translate-y-[1px] hover:border-[#bdd1ee]">
-      <div className="flex items-start justify-between gap-4">
+    <article className="glass-card rounded-2xl p-4 hover:-translate-y-1 transition-transform">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[13px] font-black uppercase tracking-[0.12em] text-[#153466]">{app_name}</p>
-          <p className="mt-2 text-sm text-[#475f87]">{content}</p>
+          <p className="font-semibold text-gray-900 dark:text-white">{app_name}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{content}</p>
+          {received_at ? (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Received: {new Date(received_at).toLocaleString()}
+            </p>
+          ) : null}
         </div>
-        <span className="rounded-full border border-[#b7c9e7] bg-[#f2f7ff] px-2.5 py-1 text-xs font-semibold text-[#18427f]">
-          Score {Number(ranking_score || 0).toFixed(2)}
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${scoreStyle}`}>
+          {safeScore.toFixed(2)}
         </span>
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${badgeStyle}`}>
-          {category}
-        </span>
+      <div className="mt-4 flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${categoryStyle}`}>
+            {category}
+          </span>
+
+          {matched_keyword ? (
+            <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+              Keyword: {matched_keyword} {matched_priority ? `(P${matched_priority})` : ""}
+            </span>
+          ) : null}
+        </div>
 
         {is_seen ? (
-          <span className="rounded-full border border-[#c8d8f0] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#1e4c93]">
+          <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
             ✓ Seen
           </span>
         ) : (
           <button
             type="button"
             onClick={() => onMarkSeen(notif_id)}
-            className="btn-ink h-8 px-3 text-xs"
+            className="text-xs border rounded-full px-3 py-1 border-gray-200 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400"
           >
             Mark Seen
           </button>

@@ -1,7 +1,13 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 const USER_STORAGE_KEY = "notifyai_user_id";
 const USER_PROFILE_STORAGE_KEY = "notifyai_user_profile";
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const getStoredUserId = () => {
+  const raw = localStorage.getItem(USER_STORAGE_KEY) || "";
+  return UUID_REGEX.test(raw) ? raw : "";
+};
 
 const UserContext = createContext(null);
 
@@ -16,16 +22,16 @@ export function UserProvider({ children }) {
 	})();
 
   const [user, setUserState] = useState(() => ({
-    user_id: localStorage.getItem(USER_STORAGE_KEY) || "",
+    user_id: getStoredUserId(),
     username: storedProfile.username || "",
     email: storedProfile.email || "",
     phone: storedProfile.phone || "",
   }));
 
-  const setUser = (nextUser) => {
+  const setUser = useCallback((nextUser) => {
     setUserState((prev) => {
       const merged = { ...prev, ...nextUser };
-      if (merged.user_id) {
+      if (merged.user_id && UUID_REGEX.test(merged.user_id)) {
         localStorage.setItem(USER_STORAGE_KEY, merged.user_id);
       localStorage.setItem(
         USER_PROFILE_STORAGE_KEY,
@@ -41,9 +47,9 @@ export function UserProvider({ children }) {
       }
       return merged;
     });
-  };
+  }, []);
 
-  const value = useMemo(() => ({ ...user, setUser }), [user]);
+  const value = useMemo(() => ({ ...user, setUser }), [user, setUser]);
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
