@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from uuid import UUID
 
+import requests
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 
@@ -22,6 +24,27 @@ _CATEGORY_URGENCY: dict[NotificationCategory, float] = {
 
 class RankedNotificationResponse(NotificationResponse):
 	ranking_score: float
+	matched_keyword: str | None = None
+	matched_priority: int | None = None
+
+
+class GmailSyncRequest(BaseModel):
+	access_token: str
+	max_results: int = 20
+	gmail_window_days: int = 7
+	calendar_window_days: int = 7
+
+
+class GmailSyncResponse(BaseModel):
+	imported_count: int
+	skipped_count: int
+	fetched_count: int
+
+
+class CalendarSyncResponse(BaseModel):
+	imported_count: int
+	skipped_count: int
+	fetched_count: int
 
 
 def _parse_received_at(value: str | datetime) -> datetime:
@@ -63,7 +86,7 @@ def _keyword_boost_for_notification(
 	app_name: str,
 	content: str,
 	keyword_rules: dict[str, dict[str, int]],
-) -> float:
+) -> tuple[float, str | None, int | None]:
 	normalized_rules: dict[str, dict[str, int]] = {}
 	for raw_app, rules in keyword_rules.items():
 		app_key = _normalize_app_key(raw_app)
@@ -77,14 +100,135 @@ def _keyword_boost_for_notification(
 	app_key = _normalize_app_key(app_name)
 	rules_for_app = normalized_rules.get(app_key, {})
 	if not rules_for_app:
-		return 0.0
+		return 0.0, None, None
 
 	content_lower = (content or "").lower()
-	matched_levels = [level for keyword, level in rules_for_app.items() if keyword in content_lower]
-	if not matched_levels:
-		return 0.0
+	matched_entries = [(keyword, level) for keyword, level in rules_for_app.items() if keyword in content_lower]
+	if not matched_entries:
+		return 0.0, None, None
 
-	return max(matched_levels) / 5.0
+	best_keyword, best_level = max(matched_entries, key=lambda item: item[1])
+	return best_level / 5.0, best_keyword, best_level
+
+
+def _extract_header(headers: list[dict], key: str) -> str:
+	key_lower = key.lower()
+	for item in headers or []:
+		name = str(item.get("name", "")).lower()
+		if name == key_lower:
+			return str(item.get("value", "")).strip()
+	return ""
+
+
+def _safe_received_at(payload: dict) -> datetime:
+	internal_ms = payload.get("internalDate")
+	if internal_ms:
+		try:
+			return datetime.fromtimestamp(int(internal_ms) / 1000.0, tz=timezone.utc)
+		except Exception:
+			pass
+
+	headers = (payload.get("payload") or {}).get("headers") or []
+	date_header = _extract_header(headers, "Date")
+	if date_header:
+		try:
+			dt = parsedate_to_datetime(date_header)
+			return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+		except Exception:
+			pass
+
+	return datetime.now(timezone.utc)
+
+
+def _infer_category(subject: str, sender: str, snippet: str) -> NotificationCategory:
+	text = f"{subject} {sender} {snippet}".lower()
+	if any(token in text for token in ["urgent", "asap", "deadline", "interview", "meeting", "offer", "invoice", "payment"]):
+		return NotificationCategory.work
+	if any(token in text for token in ["security", "verification", "reset", "alert", "warning"]):
+		return NotificationCategory.system
+	if any(token in text for token in ["sale", "promo", "offer ends", "discount", "coupon"]):
+		return NotificationCategory.promo
+	return NotificationCategory.social
+
+
+def _build_gmail_api_error_detail(response: requests.Response) -> str:
+	default_message = "Unable to sync Gmail right now. Please try again later."
+	try:
+		payload = response.json() or {}
+	except Exception:
+		return default_message
+
+	error = payload.get("error") if isinstance(payload, dict) else None
+	if not isinstance(error, dict):
+		return default_message
+
+	message = str(error.get("message") or "").strip()
+	status_name = str(error.get("status") or "").upper()
+
+	if response.status_code == 403 and ("SERVICE_DISABLED" in status_name or "has not been used" in message.lower()):
+		return "Gmail API is disabled for your Google project. Enable it in Google Cloud Console and retry in a few minutes."
+	if response.status_code == 403 and "insufficient" in message.lower():
+		return "Missing Gmail permission. Log out and sign in again, then grant Gmail access."
+	if response.status_code == 401:
+		return "Google session expired. Please sign in again to sync Gmail."
+
+	return message or default_message
+
+
+def _build_calendar_api_error_detail(response: requests.Response) -> str:
+	default_message = "Unable to sync Google Calendar right now. Please try again later."
+	try:
+		payload = response.json() or {}
+	except Exception:
+		return default_message
+
+	error = payload.get("error") if isinstance(payload, dict) else None
+	if isinstance(error, dict):
+		message = str(error.get("message") or "").strip()
+		if response.status_code == 401:
+			return "Google session expired. Please sign in again to sync Calendar."
+		if response.status_code == 403 and "insufficient" in message.lower():
+			return "Missing Calendar permission. Log out and sign in again, then grant Calendar access."
+		return message or default_message
+
+	return default_message
+
+
+def _calendar_event_time(event: dict) -> datetime:
+	start = (event.get("start") or {}).get("dateTime") or (event.get("start") or {}).get("date")
+	if not start:
+		return datetime.now(timezone.utc)
+
+	if isinstance(start, str) and len(start) == 10:
+		start = f"{start}T00:00:00+00:00"
+	try:
+		return _parse_received_at(start)
+	except Exception:
+		return datetime.now(timezone.utc)
+
+
+def _is_today_utc(value: str | datetime | None) -> bool:
+	if not value:
+		return False
+
+	try:
+		received_at = _parse_received_at(value)
+	except Exception:
+		return False
+
+	return received_at.astimezone(timezone.utc).date() == datetime.now(timezone.utc).date()
+
+
+def _should_schedule_escalation(row: dict) -> bool:
+	if not row.get("notif_id") or bool(row.get("is_seen", False)):
+		return False
+
+	app_name = str(row.get("app_name", "")).strip().lower()
+	if app_name in {"gmail", "google mail"}:
+		# Prevent automation spam from historical inbox imports.
+		return _is_today_utc(row.get("received_at"))
+
+	return True
 
 
 def _get_user_priority_maps(user_id: UUID) -> tuple[dict[str, float], dict[str, float], dict[str, dict[str, int]]]:
@@ -120,6 +264,243 @@ def _get_user_priority_maps(user_id: UUID) -> tuple[dict[str, float], dict[str, 
 	return priority_apps, ranking_weights, keyword_rules
 
 
+@router.post(
+	"/{user_id}/sync-gmail",
+	response_model=GmailSyncResponse,
+	status_code=status.HTTP_200_OK,
+)
+def sync_gmail_notifications(
+	user_id: UUID,
+	payload: GmailSyncRequest,
+	background_tasks: BackgroundTasks,
+) -> GmailSyncResponse:
+	supabase = get_supabase_client()
+	max_results = max(1, min(payload.max_results, 50))
+	gmail_window_days = max(1, min(payload.gmail_window_days, 30))
+	headers = {"Authorization": f"Bearer {payload.access_token}"}
+
+	list_resp = requests.get(
+		"https://gmail.googleapis.com/gmail/v1/users/me/messages",
+		headers=headers,
+		params={
+			"maxResults": max_results,
+			"q": f"newer_than:{gmail_window_days}d",
+		},
+		timeout=12,
+	)
+	if not list_resp.ok:
+		raise HTTPException(
+			status_code=status.HTTP_502_BAD_GATEWAY,
+			detail=_build_gmail_api_error_detail(list_resp),
+		)
+
+	message_refs = (list_resp.json() or {}).get("messages") or []
+	if not message_refs:
+		return GmailSyncResponse(imported_count=0, skipped_count=0, fetched_count=0)
+
+	existing_result = (
+		supabase.table("notifications")
+		.select("content, received_at")
+		.eq("user_id", str(user_id))
+		.eq("app_name", "Gmail")
+		.order("received_at", desc=True)
+		.limit(500)
+		.execute()
+	)
+	existing_content_keys = {
+		str(row.get("content", "")).strip().lower()
+		for row in (existing_result.data or [])
+		if str(row.get("content", "")).strip()
+	}
+
+	rows_to_insert: list[dict] = []
+	skipped_count = 0
+
+	for ref in message_refs:
+		msg_id = ref.get("id")
+		if not msg_id:
+			skipped_count += 1
+			continue
+
+		msg_resp = requests.get(
+			f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{msg_id}",
+			headers=headers,
+			params={"format": "metadata", "metadataHeaders": ["Subject", "From", "Date"]},
+			timeout=12,
+		)
+		if not msg_resp.ok:
+			skipped_count += 1
+			continue
+
+		msg_payload = msg_resp.json() or {}
+		headers_meta = (msg_payload.get("payload") or {}).get("headers") or []
+		subject = _extract_header(headers_meta, "Subject") or "(No Subject)"
+		sender = _extract_header(headers_meta, "From") or "Unknown Sender"
+		snippet = str(msg_payload.get("snippet") or "").strip()
+		received_at = _safe_received_at(msg_payload).isoformat()
+		content = f"{subject} | {sender} | {snippet}".strip(" |")
+
+		content_key = content.strip().lower()
+		if content_key in existing_content_keys:
+			skipped_count += 1
+			continue
+
+		rows_to_insert.append(
+			{
+				"user_id": str(user_id),
+				"app_name": "Gmail",
+				"content": content,
+				"category": _infer_category(subject, sender, snippet).value,
+				"is_seen": False,
+				"received_at": received_at,
+			}
+		)
+		existing_content_keys.add(content_key)
+
+	if rows_to_insert:
+		try:
+			insert_result = supabase.table("notifications").insert(rows_to_insert).execute()
+			inserted_rows = insert_result.data or []
+		except Exception as exc:
+			raise HTTPException(
+				status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+				detail=f"Failed to store synced Gmail notifications: {exc}",
+			) from exc
+
+		for row in inserted_rows:
+			if _should_schedule_escalation(row):
+				background_tasks.add_task(
+					check_and_escalate,
+					row["notif_id"],
+					str(user_id),
+					row.get("app_name", "Gmail"),
+					row.get("content", ""),
+				)
+
+	return GmailSyncResponse(
+		imported_count=len(rows_to_insert),
+		skipped_count=skipped_count,
+		fetched_count=len(message_refs),
+	)
+
+
+@router.post(
+	"/{user_id}/sync-calendar",
+	response_model=CalendarSyncResponse,
+	status_code=status.HTTP_200_OK,
+)
+def sync_calendar_notifications(
+	user_id: UUID,
+	payload: GmailSyncRequest,
+	background_tasks: BackgroundTasks,
+) -> CalendarSyncResponse:
+	supabase = get_supabase_client()
+	max_results = max(1, min(payload.max_results, 50))
+	calendar_window_days = max(1, min(payload.calendar_window_days, 30))
+	headers = {"Authorization": f"Bearer {payload.access_token}"}
+	now = datetime.now(timezone.utc)
+	time_max = (now + timedelta(days=calendar_window_days)).isoformat().replace("+00:00", "Z")
+	time_min = (now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+
+	calendar_resp = requests.get(
+		"https://www.googleapis.com/calendar/v3/calendars/primary/events",
+		headers=headers,
+		params={
+			"maxResults": max_results,
+			"singleEvents": "true",
+			"orderBy": "startTime",
+			"timeMin": time_min,
+			"timeMax": time_max,
+		},
+		timeout=12,
+	)
+
+	if not calendar_resp.ok:
+		raise HTTPException(
+			status_code=status.HTTP_502_BAD_GATEWAY,
+			detail=_build_calendar_api_error_detail(calendar_resp),
+		)
+
+	events = (calendar_resp.json() or {}).get("items") or []
+	if not events:
+		return CalendarSyncResponse(imported_count=0, skipped_count=0, fetched_count=0)
+
+	existing_result = (
+		supabase.table("notifications")
+		.select("content")
+		.eq("user_id", str(user_id))
+		.eq("app_name", "Google Calendar")
+		.order("received_at", desc=True)
+		.limit(500)
+		.execute()
+	)
+	existing_content_keys = {
+		str(row.get("content", "")).strip().lower()
+		for row in (existing_result.data or [])
+		if str(row.get("content", "")).strip()
+	}
+
+	rows_to_insert: list[dict] = []
+	skipped_count = 0
+
+	for event in events:
+		summary = str(event.get("summary") or "(No Title)").strip()
+		location = str(event.get("location") or "").strip()
+		description = str(event.get("description") or "").strip()
+		event_time = _calendar_event_time(event)
+		start_text = event_time.strftime("%Y-%m-%d %H:%M")
+
+		content_parts = [summary, f"Starts: {start_text}"]
+		if location:
+			content_parts.append(f"Location: {location}")
+		if description:
+			content_parts.append(description[:160])
+		content = " | ".join(content_parts)
+
+		content_key = content.strip().lower()
+		if not content_key or content_key in existing_content_keys:
+			skipped_count += 1
+			continue
+
+		rows_to_insert.append(
+			{
+				"user_id": str(user_id),
+				"app_name": "Google Calendar",
+				"content": content,
+				"category": _infer_category(summary, "Google Calendar", description).value,
+				"is_seen": False,
+				"received_at": event_time.isoformat(),
+			}
+		)
+		existing_content_keys.add(content_key)
+
+	if rows_to_insert:
+		try:
+			insert_result = supabase.table("notifications").insert(rows_to_insert).execute()
+			inserted_rows = insert_result.data or []
+		except Exception as exc:
+			raise HTTPException(
+				status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+				detail=f"Failed to store synced Calendar notifications: {exc}",
+			) from exc
+
+		for row in inserted_rows:
+			if _should_schedule_escalation(row):
+				background_tasks.add_task(
+					check_and_escalate,
+					row["notif_id"],
+					str(user_id),
+					row.get("app_name", "Google Calendar"),
+					row.get("content", ""),
+				)
+
+	return CalendarSyncResponse(
+		imported_count=len(rows_to_insert),
+		skipped_count=skipped_count,
+		fetched_count=len(events),
+	)
+
+
 @router.get(
 	"/{user_id}",
 	response_model=list[RankedNotificationResponse],
@@ -145,14 +526,33 @@ def get_ranked_notifications(user_id: UUID) -> list[RankedNotificationResponse]:
 	if not notifications:
 		return []
 
+	# Dashboard ranking/prioritization should only consider today's Gmail messages.
+	notifications = [
+		notif
+		for notif in notifications
+		if str(notif.get("app_name", "")).strip().lower() in {"gmail", "google mail"}
+		and _is_today_utc(notif.get("received_at"))
+	]
+	if not notifications:
+		return []
+
+	deduped_notifications: list[dict] = []
+	seen_content: set[str] = set()
+	for notif in sorted(notifications, key=lambda item: item.get("received_at", ""), reverse=True):
+		content_key = f"{str(notif.get('app_name', '')).strip().lower()}|{str(notif.get('content', '')).strip().lower()}"
+		if not content_key or content_key in seen_content:
+			continue
+		seen_content.add(content_key)
+		deduped_notifications.append(notif)
+
 	priority_apps, _, keyword_rules = _get_user_priority_maps(user_id)
 
 	ranked: list[RankedNotificationResponse] = []
-	for notif in notifications:
+	for notif in deduped_notifications:
 		category = NotificationCategory(notif["category"])
 		app_weight = float(priority_apps.get(notif["app_name"], 1.0))
 		category_urgency = _CATEGORY_URGENCY.get(category, 0.5)
-		keyword_boost = _keyword_boost_for_notification(
+		keyword_boost, matched_keyword, matched_priority = _keyword_boost_for_notification(
 			app_name=notif.get("app_name", ""),
 			content=notif.get("content", ""),
 			keyword_rules=keyword_rules,
@@ -174,6 +574,8 @@ def get_ranked_notifications(user_id: UUID) -> list[RankedNotificationResponse]:
 				is_seen=notif.get("is_seen", False),
 				received_at=notif["received_at"],
 				ranking_score=round(score, 4),
+				matched_keyword=matched_keyword,
+				matched_priority=matched_priority,
 			)
 		)
 
@@ -186,7 +588,10 @@ def get_ranked_notifications(user_id: UUID) -> list[RankedNotificationResponse]:
 	response_model=NotificationResponse,
 	status_code=status.HTTP_201_CREATED,
 )
-def add_notification(payload: NotificationRequest, background_tasks: BackgroundTasks) -> NotificationResponse:
+def add_notification(
+	payload: NotificationRequest,
+	background_tasks: BackgroundTasks,
+) -> NotificationResponse:
 	supabase = get_supabase_client()
 	payload_dict = payload.model_dump(mode="json")
 
@@ -205,14 +610,14 @@ def add_notification(payload: NotificationRequest, background_tasks: BackgroundT
 			detail="Notification insert returned no data.",
 		)
 
-	background_tasks.add_task(
-		check_and_escalate,
-		inserted["notif_id"],
-		inserted["user_id"],
-		inserted["app_name"],
-		inserted["content"],
-		30,
-	)
+	if _should_schedule_escalation(inserted):
+		background_tasks.add_task(
+			check_and_escalate,
+			inserted["notif_id"],
+			inserted["user_id"],
+			inserted.get("app_name", "Gmail"),
+			inserted.get("content", ""),
+		)
 
 	return NotificationResponse(**inserted)
 

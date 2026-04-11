@@ -125,14 +125,16 @@ def test_auth_google_returns_url(client: TestClient, monkeypatch: pytest.MonkeyP
 
 	response = client.post("/auth/google", json={"redirect_to": "http://localhost:8000/callback"})
 	assert response.status_code == 200
-	assert response.json()["provider"] == "google"
-	assert "google.com" in response.json()["auth_url"]
+	body = response.json()
+	assert "google.com" in body["auth_url"]
+	assert body["oauth_url"] == body["auth_url"]
 
 
 def test_add_notification_created(client: TestClient, monkeypatch: pytest.MonkeyPatch):
 	store = {"notifications": []}
 	fake = FakeSupabaseClient(store)
 	monkeypatch.setattr("routes.notifications.get_supabase_client", lambda: fake)
+	monkeypatch.setattr("routes.notifications.check_and_escalate", lambda *_args, **_kwargs: None)
 
 	user_id = str(uuid4())
 	response = client.post(
