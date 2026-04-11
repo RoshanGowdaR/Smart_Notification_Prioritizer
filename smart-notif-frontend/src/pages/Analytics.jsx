@@ -5,9 +5,9 @@ import Navbar from "../components/Navbar";
 import { useUser } from "../context/UserContext";
 
 const actionBadgeClasses = {
-  clicked: "border border-[#b8d9c8] bg-[#edf9f2] text-[#1f6b46]",
-  dismissed: "border border-[#f2d3ba] bg-[#fff4e9] text-[#9a6118]",
-  forwarded: "border border-[#c7d8f2] bg-[#eff5ff] text-[#1a4b97]",
+  clicked: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300",
+  dismissed: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+  forwarded: "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300",
 };
 
 function formatTimestamp(value) {
@@ -22,13 +22,14 @@ function formatTimestamp(value) {
 export default function Analytics() {
   const { user_id: userId } = useUser();
   const [reports, setReports] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchReports = async () => {
+    const fetchAnalytics = async () => {
       if (!userId) {
         return;
       }
@@ -37,23 +38,25 @@ export default function Analytics() {
       setLoadError("");
 
       try {
-        const response = await client.get(`/report/${userId}`);
-        const data = Array.isArray(response.data) ? response.data : [];
+        const [reportRes, notifRes] = await Promise.all([
+          client.get(`/report/${userId}`),
+          client.get(`/notifications/${userId}`),
+        ]);
 
-        const normalized = data.map((item) => ({
-          ...item,
-          app_name: item.app_name || "Unknown",
-        }));
+        const reportData = Array.isArray(reportRes.data) ? reportRes.data : [];
+        const notifData = Array.isArray(notifRes.data) ? notifRes.data : [];
 
         if (isMounted) {
-          setReports(normalized);
-          if (!normalized.length) {
+          setReports(reportData);
+          setNotifications(notifData);
+          if (!reportData.length) {
             setLoadError("No report logs yet. Interact with notifications to generate analytics.");
           }
         }
       } catch (_error) {
         if (isMounted) {
           setReports([]);
+          setNotifications([]);
           setLoadError("Unable to load analytics data right now.");
         }
       } finally {
@@ -63,18 +66,32 @@ export default function Analytics() {
       }
     };
 
-    fetchReports();
+    fetchAnalytics();
 
     return () => {
       isMounted = false;
     };
   }, [userId]);
 
+  const notificationsById = useMemo(() => {
+    return notifications.reduce((acc, item) => {
+      acc[item.notif_id] = item;
+      return acc;
+    }, {});
+  }, [notifications]);
+
+  const reportRows = useMemo(() => {
+    return reports.map((report) => ({
+      ...report,
+      app_name: notificationsById[report.notif_id]?.app_name || "Unknown",
+    }));
+  }, [notificationsById, reports]);
+
   const chartRows = useMemo(() => {
-    const grouped = reports.reduce((acc, item) => {
+    const grouped = reportRows.reduce((acc, item) => {
       const app = item.app_name || "Unknown";
       if (!acc[app]) {
-        acc[app] = { app_name: app, clicks: 0, dismissals: 0, forwarded: 0 };
+        acc[app] = { app_name: app, clicks: 0, dismissals: 0 };
       }
       if (item.action_taken === "clicked") {
         acc[app].clicks += 1;
@@ -82,56 +99,45 @@ export default function Analytics() {
       if (item.action_taken === "dismissed") {
         acc[app].dismissals += 1;
       }
-      if (item.action_taken === "forwarded") {
-        acc[app].forwarded += 1;
-      }
       return acc;
     }, {});
 
-    return Object.values(grouped).sort((a, b) => (b.clicks + b.dismissals + b.forwarded) - (a.clicks + a.dismissals + a.forwarded));
-  }, [reports]);
+    return Object.values(grouped).sort((a, b) => b.clicks + b.dismissals - (a.clicks + a.dismissals));
+  }, [reportRows]);
 
   const maxCount = useMemo(() => {
-    const counts = chartRows.flatMap((row) => [row.clicks, row.dismissals, row.forwarded]);
+    const counts = chartRows.flatMap((row) => [row.clicks, row.dismissals]);
     return Math.max(...counts, 1);
   }, [chartRows]);
 
-  const clickedTotal = reports.filter((r) => r.action_taken === "clicked").length;
-  const dismissedTotal = reports.filter((r) => r.action_taken === "dismissed").length;
-
   return (
-    <div className="shell">
+    <div className="min-h-screen bg-white dark:bg-[#050505] transition-colors duration-300">
       <Navbar />
 
-      <main className="section-wrap py-8">
-        <header className="panel mb-6 p-5 sm:p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="kicker">Model Insight</p>
-              <h1 className="mt-3 text-2xl font-black uppercase tracking-[0.04em] text-[#102447]">Analytics</h1>
-              <p className="mt-2 text-sm text-[#4f648c]">Track user actions and optimize your ranking strategy.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="metric-pill">Clicks: {clickedTotal}</span>
-              <span className="metric-pill">Dismissed: {dismissedTotal}</span>
-            </div>
-          </div>
-          {loadError && <p className="mt-3 rounded-xl border border-[#f0dbbe] bg-[#fff5e9] px-3 py-2 text-sm text-[#8c5928]">{loadError}</p>}
+      <main className="pt-28 px-6 lg:px-12 pb-12 max-w-7xl mx-auto">
+        <header className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics</h1>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">Review report actions and ranking performance by app.</p>
+          {loadError && (
+            <p className="mt-3 rounded-xl border border-[#f1d6c5] bg-[#fff6ef] px-3 py-2 text-sm text-[#915d30]">
+              {loadError}
+            </p>
+          )}
         </header>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#b9cbe8] border-t-[#0B3D91]" />
+            <div className="animate-spin w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500" />
           </div>
         ) : (
-          <div className="space-y-8">
-            <section className="panel overflow-hidden">
-              <div className="border-b border-[#d8e2f3] px-4 py-3">
-                <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#143161]">Report History</h2>
+          <section className="grid gap-6 lg:grid-cols-2">
+            <div className="glass-card rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Report History Table</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f4f8ff] text-xs uppercase tracking-wide text-[#6078a3]">
+                  <thead className="bg-gray-50 dark:bg-white/5 text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     <tr>
                       <th className="px-4 py-3">App</th>
                       <th className="px-4 py-3">Action</th>
@@ -140,62 +146,75 @@ export default function Analytics() {
                     </tr>
                   </thead>
                   <tbody>
-                    {reports.map((row) => {
-                      const badgeClass = actionBadgeClasses[row.action_taken] || "border border-[#c7d8f2] bg-[#eff5ff] text-[#1a4b97]";
+                    {reportRows.map((row) => {
+                      const badgeClass = actionBadgeClasses[row.action_taken] || "bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300";
                       return (
-                        <tr key={row.report_id} className="border-t border-[#e0e8f6]">
-                          <td className="px-4 py-3 font-semibold text-[#143161]">{row.app_name || "Unknown"}</td>
+                        <tr key={row.report_id} className="border-t border-gray-100 dark:border-white/10">
+                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{row.app_name}</td>
                           <td className="px-4 py-3">
                             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
                               {row.action_taken}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-[#264672]">{Number(row.ranking_score || 0).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-[#6279a1]">{formatTimestamp(row.timestamp)}</td>
+                          <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{Number(row.ranking_score || 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{formatTimestamp(row.timestamp)}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            </section>
+            </div>
 
-            <section className="panel p-4 sm:p-5">
-              <h2 className="mb-4 text-sm font-black uppercase tracking-[0.14em] text-[#143161]">Actions by App</h2>
+            <div className="glass-card rounded-2xl p-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Clicks vs Dismissals by App</h2>
 
-              <svg viewBox={`0 0 900 ${Math.max(140, chartRows.length * 64 + 24)}`} className="w-full">
+              <svg viewBox={`0 0 700 ${Math.max(160, chartRows.length * 56 + 40)}`} className="w-full mt-4">
                 {chartRows.map((row, index) => {
-                  const y = 20 + index * 64;
-                  const clickWidth = Math.max((row.clicks / maxCount) * 230, row.clicks > 0 ? 8 : 0);
-                  const dismissWidth = Math.max((row.dismissals / maxCount) * 230, row.dismissals > 0 ? 8 : 0);
-                  const forwardedWidth = Math.max((row.forwarded / maxCount) * 230, row.forwarded > 0 ? 8 : 0);
+                  const y = 20 + index * 56;
+                  const clickWidth = (row.clicks / maxCount) * 220;
+                  const dismissWidth = (row.dismissals / maxCount) * 220;
 
                   return (
                     <g key={row.app_name}>
-                      <text x="0" y={y + 20} fill="#123463" fontSize="13" fontWeight="700">
+                      <text x="0" y={y + 18} fill="currentColor" className="text-xs" style={{ fontSize: 12 }}>
                         {row.app_name}
                       </text>
 
-                      <rect x="200" y={y} width={clickWidth} height="12" rx="6" fill="#1f6b46" opacity="0.92" />
-                      <text x={200 + clickWidth + 8} y={y + 10} fill="#1f6b46" fontSize="12" fontWeight="700">{row.clicks}</text>
+                      {row.clicks > 0 && (
+                        <>
+                          <rect x="190" y={y + 2} width={clickWidth} height="14" rx="7" fill="#4F46E5" />
+                          <text x={190 + clickWidth + 8} y={y + 13} fill="#4F46E5" style={{ fontSize: 12, fontWeight: 700 }}>
+                            {row.clicks}
+                          </text>
+                        </>
+                      )}
 
-                      <rect x="200" y={y + 18} width={dismissWidth} height="12" rx="6" fill="#c7782f" opacity="0.85" />
-                      <text x={200 + dismissWidth + 8} y={y + 28} fill="#9a6118" fontSize="12" fontWeight="700">{row.dismissals}</text>
-
-                      <rect x="200" y={y + 36} width={forwardedWidth} height="12" rx="6" fill="#1a4b97" opacity="0.9" />
-                      <text x={200 + forwardedWidth + 8} y={y + 46} fill="#1a4b97" fontSize="12" fontWeight="700">{row.forwarded}</text>
+                      {row.dismissals > 0 && (
+                        <>
+                          <rect x="190" y={y + 24} width={dismissWidth} height="14" rx="7" fill="#E11D48" />
+                          <text x={190 + dismissWidth + 8} y={y + 35} fill="#E11D48" style={{ fontSize: 12, fontWeight: 700 }}>
+                            {row.dismissals}
+                          </text>
+                        </>
+                      )}
                     </g>
                   );
                 })}
               </svg>
 
-              <div className="mt-3 flex flex-wrap gap-4 text-xs text-[#5f789f]">
-                <span className="inline-flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#1f6b46]" /> Clicked</span>
-                <span className="inline-flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#c7782f]" /> Dismissed</span>
-                <span className="inline-flex items-center gap-2"><span className="inline-block h-2.5 w-2.5 rounded-full bg-[#1a4b97]" /> Forwarded</span>
+              <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-600 dark:text-gray-400">
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-indigo-600" />
+                  Clicks
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-danger" />
+                  Dismissals
+                </span>
               </div>
-            </section>
-          </div>
+            </div>
+          </section>
         )}
       </main>
     </div>
