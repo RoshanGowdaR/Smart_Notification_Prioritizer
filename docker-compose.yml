@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ./smart-notif-backend
+      dockerfile: Dockerfile
+    container_name: smart_notif_backend
+    env_file:
+      - ./smart-notif-backend/.env
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./smart-notif-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: smart_notif_frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    restart: unless-stopped
