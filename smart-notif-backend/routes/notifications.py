@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 
 from database.supabase_client import get_supabase_client
 from models.schemas import NotificationCategory, NotificationRequest, NotificationResponse
+from services.escalation_service import check_and_escalate
 
 router = APIRouter(tags=["notifications"])
 
@@ -185,7 +186,7 @@ def get_ranked_notifications(user_id: UUID) -> list[RankedNotificationResponse]:
 	response_model=NotificationResponse,
 	status_code=status.HTTP_201_CREATED,
 )
-def add_notification(payload: NotificationRequest) -> NotificationResponse:
+def add_notification(payload: NotificationRequest, background_tasks: BackgroundTasks) -> NotificationResponse:
 	supabase = get_supabase_client()
 	payload_dict = payload.model_dump(mode="json")
 
@@ -203,6 +204,15 @@ def add_notification(payload: NotificationRequest) -> NotificationResponse:
 			status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 			detail="Notification insert returned no data.",
 		)
+
+	background_tasks.add_task(
+		check_and_escalate,
+		inserted["notif_id"],
+		inserted["user_id"],
+		inserted["app_name"],
+		inserted["content"],
+		30,
+	)
 
 	return NotificationResponse(**inserted)
 

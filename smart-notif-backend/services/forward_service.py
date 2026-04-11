@@ -5,22 +5,32 @@ import os
 load_dotenv()
 
 
+def _normalize_phone(value: str) -> str:
+	raw = str(value or "").strip().replace("whatsapp:", "")
+	digits = "".join(ch for ch in raw if ch.isdigit())
+	if not digits:
+		return raw
+	return f"+{digits}"
+
+
 def send_sms(to_number: str, message: str) -> dict:
 	client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+	normalized_to = _normalize_phone(to_number)
 	msg = client.messages.create(
 		body=message,
 		from_=os.getenv("TWILIO_PHONE_NUMBER"),
-		to=to_number,
+		to=normalized_to,
 	)
 	return {"sid": msg.sid, "status": msg.status}
 
 
 def send_whatsapp(to_number: str, message: str) -> dict:
 	client = Client(os.getenv("TWILIO_ACCOUNT_SID"), os.getenv("TWILIO_AUTH_TOKEN"))
+	normalized_to = _normalize_phone(to_number)
 	msg = client.messages.create(
 		body=message,
 		from_=os.getenv("TWILIO_WHATSAPP_NUMBER"),
-		to=f"whatsapp:{to_number}",
+		to=f"whatsapp:{normalized_to}",
 	)
 	return {"sid": msg.sid, "status": msg.status}
 
