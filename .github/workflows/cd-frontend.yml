@@ -1,0 +1,39 @@
+name: CD Frontend
+
+on:
+  push:
+    branches:
+      - main
+      - feature-frontend
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    name: Build and Package Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: smart-notif-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: smart-notif-frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: smart-notif-frontend
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist-${{ github.sha }}
+          path: smart-notif-frontend/dist
+          if-no-files-found: error
