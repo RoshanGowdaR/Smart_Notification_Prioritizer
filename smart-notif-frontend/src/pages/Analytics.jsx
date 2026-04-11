@@ -83,12 +83,15 @@ export default function Analytics() {
   const reportRows = useMemo(() => {
     return reports.map((report) => ({
       ...report,
-      app_name: notificationsById[report.notif_id]?.app_name || "Unknown",
+      app_name: notificationsById[report.notif_id]?.app_name || "Unmapped Notification",
     }));
   }, [notificationsById, reports]);
 
   const chartRows = useMemo(() => {
     const grouped = reportRows.reduce((acc, item) => {
+      if (item.app_name === "Unmapped Notification") {
+        return acc;
+      }
       const app = item.app_name || "Unknown";
       if (!acc[app]) {
         acc[app] = { app_name: app, clicks: 0, dismissals: 0 };
@@ -168,6 +171,9 @@ export default function Analytics() {
 
             <div className="glass-card rounded-2xl p-6">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Clicks vs Dismissals by App</h2>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Rows without a matching notification are kept in table history but excluded from this chart.
+              </p>
 
               <svg viewBox={`0 0 700 ${Math.max(160, chartRows.length * 56 + 40)}`} className="w-full mt-4">
                 {chartRows.map((row, index) => {

@@ -2,33 +2,46 @@
 
 ## Run the project
 
-### Backend (FastAPI)
+### 1) Backend (FastAPI)
 
-Run from PowerShell:
+Open Terminal 1 (PowerShell) and run:
 
-```powershell
-C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\.venv\Scripts\python.exe -m uvicorn main:app --app-dir "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON_backend_wt\smart-notif-backend" --host 127.0.0.1 --port 8001
-```
+C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\.venv\Scripts\python.exe -m uvicorn main:app --app-dir "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend" --host 127.0.0.1 --port 8001
 
 Backend health check:
 
-```powershell
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8001/health | Select-Object -ExpandProperty Content
-```
 
-### Frontend (Vite + React)
+### 2) Frontend (Vite + React)
 
-Run from PowerShell:
+Open Terminal 2 (PowerShell) and run:
 
-```powershell
 npm --prefix "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-frontend" run dev
-```
 
-Open the URL shown in terminal (currently `http://localhost:5176`).
+Open:
 
-### Optional build check
+http://localhost:5173/dashboard
 
-```powershell
+### 3) ngrok (for Twilio WhatsApp webhook)
+
+Open Terminal 3 and run:
+
+ngrok http 127.0.0.1:8001
+
+Set Twilio WhatsApp incoming webhook URL to:
+
+https://YOUR-NGROK-DOMAIN/automation/whatsapp-reply
+
+### 4) Optional frontend build check
+
 npm --prefix "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-frontend" run build
-```
-.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001
+
+### 5) Backend unit tests (for CI/CD)
+
+Run all backend tests:
+
+C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\.venv\Scripts\python.exe -m pytest "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\tests" -q
+
+Run specific feature tests:
+
+C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\.venv\Scripts\python.exe -m pytest "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\tests\test_notifications_today_only.py" "C:\Users\gowda\OneDrive\Desktop\BCE_HACKTHON\smart-notif-backend\tests\test_sync_sources.py" -q
