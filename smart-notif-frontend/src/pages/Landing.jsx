@@ -22,10 +22,53 @@ import { useUser } from "../context/UserContext";
 import { supabase } from "../lib/supabase";
 import ThemeToggle from "../components/ThemeToggle";
 
+const DEMO_USER_ID = "00000000-0000-4000-8000-000000000001";
+const GOOGLE_PROVIDER_TOKEN_KEY = "notifyai_google_provider_token";
+
+const getDisplayName = (session) =>
+  session?.user?.user_metadata?.full_name ||
+  session?.user?.user_metadata?.name ||
+  session?.user?.email ||
+  "Demo User";
+
+const getEmail = (session) => session?.user?.email || "demo@notifyai.com";
+
 export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
   const { setUser } = useUser();
   const navigate = useNavigate();
+
+  async function ensureUserExists({ userId, username, email, phone }) {
+    try {
+      await client.post("/users/upsert", {
+        user_id: userId,
+        username,
+        email_id: email,
+        ph_num: phone || "",
+      });
+    } catch {
+      // Keep auth flow non-blocking if backend user upsert is temporarily unavailable.
+    }
+  }
+
+  async function ensureDemoUserExists() {
+    await ensureUserExists({
+      userId: DEMO_USER_ID,
+      username: "Demo User",
+      email: "demo@notifyai.com",
+      phone: "+919876543210",
+    });
+  }
+
+  async function enterDemoMode() {
+    await ensureDemoUserExists();
+    setUser({
+      user_id: DEMO_USER_ID,
+      username: "Demo User",
+      email: "demo@notifyai.com",
+    });
+    navigate("/dashboard", { replace: true });
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -34,11 +77,12 @@ export default function Landing() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
 
+      // For PKCE flows initiated from the frontend client.
       if (code) {
         try {
           await supabase.auth.exchangeCodeForSession(code);
         } catch {
-          // Continue with session lookup or fallback.
+          // Continue to session read; if it fails too, fallback below handles it.
         }
       }
 
@@ -52,30 +96,39 @@ export default function Landing() {
         }
 
         if (session?.user) {
+          if (session.provider_token) {
+            localStorage.setItem(GOOGLE_PROVIDER_TOKEN_KEY, session.provider_token);
+          }
+
+          const nextUsername = getDisplayName(session);
+          const nextEmail = getEmail(session);
+
+          await ensureUserExists({
+            userId: session.user.id,
+            username: nextUsername,
+            email: nextEmail,
+            phone: "",
+          });
+
           setUser({
             user_id: session.user.id,
-            username:
-              session.user.user_metadata?.full_name ||
-              session.user.user_metadata?.name ||
-              session.user.email ||
-              "Demo User",
-            email: session.user.email || "demo@notifyai.com",
+            username: nextUsername,
+            email: nextEmail,
           });
           navigate("/dashboard", { replace: true });
           return;
         }
 
         if (code) {
-          setUser({
-            user_id: "test-user-001",
-            username: "Demo User",
-            email: "demo@notifyai.com",
-          });
-          navigate("/dashboard", { replace: true });
+          // Callback happened but no authenticated session could be established.
+          await enterDemoMode();
         }
       } catch {
         if (!isMounted) {
           return;
+        }
+        if (code) {
+          await enterDemoMode();
         }
       }
     };
@@ -90,24 +143,24 @@ export default function Landing() {
   async function handleGoogleLogin() {
     setIsLoading(true);
     try {
-      const res = await client.get("/auth/google", {
-        params: {
-          redirect_to: window.location.origin,
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+          scopes:
+            "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly",
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent select_account",
+            include_granted_scopes: "true",
+          },
         },
       });
-      const url = res?.data?.auth_url || res?.data?.oauth_url;
-      if (url) {
-        window.location.href = url;
-        return;
+      if (error) {
+        throw error;
       }
-      throw new Error("no url");
     } catch {
-      setUser({
-        user_id: "test-user-001",
-        username: "Demo User",
-        email: "demo@notifyai.com",
-      });
-      navigate("/dashboard");
+      await enterDemoMode();
     } finally {
       setIsLoading(false);
     }
