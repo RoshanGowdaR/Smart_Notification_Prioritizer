@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import client from "../api/client";
@@ -9,6 +9,7 @@ import { supabase } from "../lib/supabase";
 
 const GOOGLE_PROVIDER_TOKEN_KEY = "notifyai_google_provider_token";
 const DEMO_USER_ID = "00000000-0000-4000-8000-000000000001";
+const DASHBOARD_CACHE_PREFIX = "notifyai_dashboard_cache";
 
 const sortByReceivedAt = (items) =>
   [...items].sort((a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime());
@@ -28,12 +29,34 @@ const dedupeByContent = (items) => {
   });
 };
 
+const mergeNotifications = (existing, incoming) => {
+  const map = new Map();
+
+  for (const item of existing || []) {
+    if (item?.notif_id) {
+      map.set(item.notif_id, item);
+    }
+  }
+
+  for (const item of incoming || []) {
+    if (item?.notif_id) {
+      map.set(item.notif_id, item);
+    }
+  }
+
+  return dedupeByContent(Array.from(map.values())).sort(
+    (a, b) => new Date(b.received_at).getTime() - new Date(a.received_at).getTime(),
+  );
+};
+
 export default function Dashboard() {
   const { user_id: userId } = useUser();
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [syncWarning, setSyncWarning] = useState("");
+  const pollInFlightRef = useRef(false);
+  const cacheLoadedRef = useRef(false);
 
   const syncGmailToBackend = useCallback(async () => {
     if (!userId) {
@@ -46,14 +69,60 @@ export default function Dashboard() {
 
     const providerToken = session?.provider_token || localStorage.getItem(GOOGLE_PROVIDER_TOKEN_KEY);
     if (!providerToken) {
+      return { imported_count: 0, skipped_count: 0, fetched_count: 0 };
+    }
+
+    const response = await client.post(`/notifications/${userId}/sync-gmail`, {
+      access_token: providerToken,
+      max_results: 25,
+      gmail_window_days: 7,
+    });
+
+    return response?.data || { imported_count: 0, skipped_count: 0, fetched_count: 0 };
+  }, [userId]);
+
+  const syncCalendarToBackend = useCallback(async () => {
+    if (!userId) {
       return;
     }
 
-    await client.post(`/notifications/${userId}/sync-gmail`, {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const providerToken = session?.provider_token || localStorage.getItem(GOOGLE_PROVIDER_TOKEN_KEY);
+    if (!providerToken) {
+      return { imported_count: 0, skipped_count: 0, fetched_count: 0 };
+    }
+
+    const response = await client.post(`/notifications/${userId}/sync-calendar`, {
       access_token: providerToken,
-      max_results: 25,
+      max_results: 20,
+      calendar_window_days: 7,
     });
+
+    return response?.data || { imported_count: 0, skipped_count: 0, fetched_count: 0 };
   }, [userId]);
+
+  const syncGoogleSources = useCallback(async () => {
+    const syncResults = await Promise.allSettled([syncGmailToBackend(), syncCalendarToBackend()]);
+    const failures = syncResults.filter((result) => result.status === "rejected");
+
+    if (!failures.length) {
+      setSyncWarning("");
+      const importedCount = syncResults
+        .filter((result) => result.status === "fulfilled")
+        .reduce((total, result) => total + Number(result.value?.imported_count || 0), 0);
+      return importedCount > 0;
+    }
+
+    const detail = failures
+      .map((entry) => entry.reason?.response?.data?.detail)
+      .find((item) => typeof item === "string" && item);
+
+    setSyncWarning(detail || "Google sync is temporarily unavailable. Showing existing notifications.");
+    return false;
+  }, [syncCalendarToBackend, syncGmailToBackend]);
 
   const loadRankedNotifications = useCallback(async ({ silent = false } = {}) => {
     if (!userId) {
@@ -68,18 +137,23 @@ export default function Dashboard() {
     try {
       const response = await client.get(`/notifications/${userId}`);
       const data = dedupeByContent(Array.isArray(response.data) ? response.data : []);
-      setNotifications(data);
 
-      if (!data.length) {
+      if (data.length) {
+        setNotifications((prev) => mergeNotifications(prev, data));
+        if (!silent) {
+          setErrorMessage("");
+        }
+      } else if (!silent) {
         setErrorMessage("No notifications available yet. Add priorities and incoming events to begin ranking.");
       }
     } catch (_error) {
-      setNotifications([]);
       const backendDetail = _error?.response?.data?.detail;
-      if (typeof backendDetail === "string" && backendDetail) {
-        setErrorMessage(backendDetail);
-      } else {
-        setErrorMessage("Could not load ranked notifications from backend. Please retry.");
+      if (!silent) {
+        if (typeof backendDetail === "string" && backendDetail) {
+          setErrorMessage(backendDetail);
+        } else {
+          setErrorMessage("Could not load ranked notifications from backend. Please retry.");
+        }
       }
     } finally {
       if (!silent) {
@@ -88,31 +162,84 @@ export default function Dashboard() {
     }
   }, [userId]);
 
-  const fetchNotifications = useCallback(async () => {
+  useEffect(() => {
     if (!userId) {
       return;
     }
 
-    setSyncWarning("");
+    const cacheKey = `${DASHBOARD_CACHE_PREFIX}:${userId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) {
+      cacheLoadedRef.current = true;
+      return;
+    }
 
-    // Start sync in background so UI is responsive with current data.
-    void syncGmailToBackend()
-      .then(() => loadRankedNotifications({ silent: true }))
-      .catch((_syncError) => {
-        const syncDetail = _syncError?.response?.data?.detail;
-        if (typeof syncDetail === "string" && syncDetail) {
-          setSyncWarning(syncDetail);
-        } else {
-          setSyncWarning("Gmail sync is temporarily unavailable. Showing existing notifications.");
-        }
-      });
-
-    await loadRankedNotifications();
-  }, [loadRankedNotifications, syncGmailToBackend, userId]);
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length) {
+        setNotifications(dedupeByContent(parsed));
+      }
+    } catch (_error) {
+      // Ignore bad cache payloads.
+    } finally {
+      cacheLoadedRef.current = true;
+    }
+  }, [userId]);
 
   useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+    if (!userId) {
+      return;
+    }
+
+    const cacheKey = `${DASHBOARD_CACHE_PREFIX}:${userId}`;
+    if (!notifications.length) {
+      return;
+    }
+
+    localStorage.setItem(cacheKey, JSON.stringify(notifications));
+  }, [notifications, userId]);
+
+  const fetchNotifications = useCallback(async ({ silent = false } = {}) => {
+    if (!userId) {
+      return;
+    }
+
+    if (silent && pollInFlightRef.current) {
+      return;
+    }
+
+    if (silent) {
+      pollInFlightRef.current = true;
+    }
+
+    try {
+      if (!silent) {
+        setSyncWarning("");
+      }
+
+      const hasNewItems = await syncGoogleSources();
+      if (!silent || hasNewItems) {
+        await loadRankedNotifications({ silent });
+      }
+    } finally {
+      if (silent) {
+        pollInFlightRef.current = false;
+      }
+    }
+  }, [loadRankedNotifications, syncGoogleSources, userId]);
+
+  useEffect(() => {
+    const initialSilent = cacheLoadedRef.current && notifications.length > 0;
+    void fetchNotifications({ silent: initialSilent });
+
+    const intervalId = window.setInterval(() => {
+      void fetchNotifications({ silent: true });
+    }, 10_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [fetchNotifications, userId]);
 
   const handleMarkSeen = async (notifId) => {
     const target = notifications.find((item) => item.notif_id === notifId);
@@ -151,7 +278,9 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Notification Dashboard</h1>
               <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-200 dark:border-white/10 bg-white/50 dark:bg-white/5 text-xs text-gray-500 dark:text-gray-400">
                 <span className="w-2 h-2 rounded-full bg-gray-400" />
-                {userId === DEMO_USER_ID ? "Demo mode · Connect account to sync" : "Connected account · Gmail sync enabled"}
+                {userId === DEMO_USER_ID
+                  ? "Demo mode · Connect account to sync"
+                  : "Connected account · Gmail + Calendar auto-sync every 10s"}
               </div>
             </div>
 
