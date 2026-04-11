@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Form, HTTPException, status
 from pydantic import BaseModel
 
 from database.supabase_client import get_supabase_client
@@ -13,6 +13,14 @@ from services.forward_service import forward_notification
 from services.ranking_service import compute_notification_score
 
 router = APIRouter(tags=["automation"])
+
+
+def _normalize_phone(value: str) -> str:
+	raw = str(value or "").strip().replace("whatsapp:", "")
+	digits = "".join(ch for ch in raw if ch.isdigit())
+	if not digits:
+		return raw
+	return f"+{digits}"
 
 
 class AutomationTriggerResponse(BaseModel):
@@ -135,3 +143,63 @@ def get_automation_history(user_id: UUID) -> list[AutomationResponse]:
 	)
 	rows = result.data or []
 	return [AutomationResponse.model_validate(row) for row in rows]
+
+
+@router.post(
+	"/whatsapp-reply",
+	status_code=status.HTTP_200_OK,
+)
+def capture_whatsapp_reply(
+	From: str = Form(...),
+	Body: str = Form(default=""),
+) -> dict:
+	supabase = get_supabase_client()
+	incoming_phone = _normalize_phone(From)
+
+	users_result = supabase.table("users").select("user_id, ph_num").execute()
+	users = users_result.data or []
+	matched_user = None
+	for row in users:
+		stored_phone = _normalize_phone(row.get("ph_num", ""))
+		if stored_phone and (stored_phone == incoming_phone or stored_phone.endswith(incoming_phone[-10:])):
+			matched_user = row
+			break
+
+	if not matched_user:
+		return {"status": "ignored", "reason": "user_not_found"}
+
+	automation_result = (
+		supabase.table("automation")
+		.select("auto_id, notif_id")
+		.eq("user_id", str(matched_user["user_id"]))
+		.eq("channel", "whatsapp")
+		.order("triggered_at", desc=True)
+		.limit(10)
+		.execute()
+	)
+	recent_rows = automation_result.data or []
+	if not recent_rows:
+		return {"status": "ignored", "reason": "automation_not_found"}
+
+	update_payload = {
+		"reply_received": True,
+		"reply_template": str(Body or "").strip()[:500],
+	}
+	try:
+		supabase.table("automation").update(update_payload).eq("user_id", str(matched_user["user_id"])).eq(
+			"channel", "whatsapp"
+		).execute()
+	except Exception as exc:
+		if "reply_received" in str(exc):
+			supabase.table("automation").update({"reply_template": str(Body or "").strip()[:500]}).eq(
+				"user_id", str(matched_user["user_id"])
+			).eq("channel", "whatsapp").execute()
+		else:
+			raise
+
+	# Hard guard: mark related pending notifications as seen so queued tasks stop.
+	notif_ids = [row.get("notif_id") for row in recent_rows if row.get("notif_id")]
+	for notif_id in notif_ids:
+		supabase.table("notifications").update({"is_seen": True}).eq("notif_id", str(notif_id)).execute()
+
+	return {"status": "ok", "reply_received": True}
